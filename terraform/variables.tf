@@ -1,0 +1,172 @@
+variable "aws_region" {
+  description = "AWS region for resources"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "environment" {
+  description = "Environment name (dev, staging, production)"
+  type        = string
+  validation {
+    condition     = contains(["dev", "staging", "production"], var.environment)
+    error_message = "Environment must be dev, staging, or production."
+  }
+}
+
+variable "owner_email" {
+  description = "Email of the infrastructure owner"
+  type        = string
+  default     = "infrastructure@diagnyx.ai"
+}
+
+# VPC Configuration
+variable "vpc_cidr" {
+  description = "CIDR block for VPC"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "enable_nat_gateway" {
+  description = "Enable NAT Gateway for private subnets"
+  type        = bool
+  default     = true
+}
+
+variable "single_nat_gateway" {
+  description = "Use a single NAT Gateway for all private subnets"
+  type        = bool
+  default     = false
+}
+
+# EKS Configuration
+variable "eks_cluster_version" {
+  description = "Kubernetes version for EKS cluster"
+  type        = string
+  default     = "1.28"
+}
+
+variable "eks_node_group_desired_size" {
+  description = "Desired number of nodes in EKS node group"
+  type        = number
+  default     = 3
+}
+
+variable "eks_node_group_min_size" {
+  description = "Minimum number of nodes in EKS node group"
+  type        = number
+  default     = 2
+}
+
+variable "eks_node_group_max_size" {
+  description = "Maximum number of nodes in EKS node group"
+  type        = number
+  default     = 10
+}
+
+variable "eks_node_instance_types" {
+  description = "Instance types for EKS nodes"
+  type        = list(string)
+  default     = ["t3.large", "t3.xlarge"]
+}
+
+# RDS Configuration
+variable "rds_engine_version" {
+  description = "PostgreSQL engine version"
+  type        = string
+  default     = "15.4"
+}
+
+variable "rds_instance_class" {
+  description = "RDS instance class"
+  type        = string
+  default     = "db.r5.large"
+}
+
+variable "rds_allocated_storage" {
+  description = "Allocated storage for RDS in GB"
+  type        = number
+  default     = 100
+}
+
+variable "rds_max_allocated_storage" {
+  description = "Maximum allocated storage for RDS in GB"
+  type        = number
+  default     = 1000
+}
+
+variable "rds_backup_retention_period" {
+  description = "Backup retention period in days"
+  type        = number
+  default     = 30
+}
+
+variable "rds_multi_az" {
+  description = "Enable Multi-AZ for RDS"
+  type        = bool
+  default     = true
+}
+
+# ElastiCache Configuration
+variable "elasticache_node_type" {
+  description = "ElastiCache node type"
+  type        = string
+  default     = "cache.r6g.large"
+}
+
+variable "elasticache_num_cache_nodes" {
+  description = "Number of cache nodes"
+  type        = number
+  default     = 3
+}
+
+# S3 Configuration
+variable "enable_s3_versioning" {
+  description = "Enable versioning for S3 buckets"
+  type        = bool
+  default     = true
+}
+
+variable "s3_lifecycle_days" {
+  description = "Number of days before transitioning objects to cheaper storage"
+  type        = number
+  default     = 90
+}
+
+# Monitoring
+variable "enable_monitoring" {
+  description = "Enable CloudWatch monitoring and alarms"
+  type        = bool
+  default     = true
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days"
+  type        = number
+  default     = 30
+}
+
+# Security
+variable "allowed_cidr_blocks" {
+  description = "CIDR blocks allowed to access resources"
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_deletion_protection" {
+  description = "Enable deletion protection for critical resources"
+  type        = bool
+  default     = true
+}
+
+# Cost Optimization
+variable "enable_spot_instances" {
+  description = "Enable spot instances for non-critical workloads"
+  type        = bool
+  default     = false
+}
+
+variable "spot_max_price" {
+  description = "Maximum price for spot instances"
+  type        = string
+  default     = ""
+}

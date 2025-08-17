@@ -1,0 +1,128 @@
+name: Deploy to Staging
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: diagnyx-staging
+  EKS_CLUSTER_NAME: diagnyx-staging
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Lint Kubernetes manifests
+      run: |
+        # Install kubeval
+        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        tar xf kubeval-linux-amd64.tar.gz
+        sudo cp kubeval /usr/local/bin
+        
+        # Validate manifests
+        kubeval kubernetes/*.yaml
+    
+    - name: Security scan with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+    
+    - name: Terraform validate
+      run: |
+        cd terraform
+        terraform init -backend=false
+        terraform validate
+
+  build-and-push:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, ingestion-service, dashboard, website]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: ../${{ matrix.service }}
+        push: true
+        tags: |
+          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/${{ matrix.service }}:staging-${{ github.sha }}
+          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/${{ matrix.service }}:staging-latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+    
+    - name: Deploy to staging
+      run: |
+        # Create staging namespace if not exists
+        kubectl create namespace diagnyx-staging --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Apply configurations with staging values
+        kubectl apply -f kubernetes/ -n diagnyx-staging
+        
+        # Update image tags
+        export IMAGE_TAG=staging-${{ github.sha }}
+        kubectl set image deployment/auth-service auth-service=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/auth-service:$IMAGE_TAG -n diagnyx-staging
+        kubectl set image deployment/ingestion-service ingestion-service=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/ingestion-service:$IMAGE_TAG -n diagnyx-staging
+        kubectl set image deployment/dashboard dashboard=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/dashboard:$IMAGE_TAG -n diagnyx-staging
+    
+    - name: Run integration tests
+      run: |
+        # Run integration test suite
+        npm run test:integration
+    
+    - name: Comment PR
+      uses: actions/github-script@v6
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '✅ Deployed to staging environment: https://staging.diagnyx.ai'
+          })

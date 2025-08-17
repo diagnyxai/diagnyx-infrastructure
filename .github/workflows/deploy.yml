@@ -1,0 +1,151 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: diagnyx
+  EKS_CLUSTER_NAME: diagnyx-prod
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [auth-service, ingestion-service, dashboard]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run tests for ${{ matrix.service }}
+      run: |
+        cd ../${{ matrix.service }}
+        if [ -f "package.json" ]; then
+          npm install
+          npm test
+        elif [ -f "go.mod" ]; then
+          go test ./...
+        fi
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: 
+          - name: auth-service
+            path: diagnyx-auth
+            dockerfile: Dockerfile
+          - name: ingestion-service
+            path: diagnyx-ingestion
+            dockerfile: Dockerfile
+          - name: dashboard
+            path: diagnyx-dashboard
+            dockerfile: Dockerfile
+          - name: website
+            path: diagnyx-website
+            dockerfile: Dockerfile
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        repository: sksathiyaraj/${{ matrix.service.path }}
+        path: ${{ matrix.service.path }}
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        cd ${{ matrix.service.path }}
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY/${{ matrix.service.name }}:$IMAGE_TAG \
+                     -t $ECR_REGISTRY/$ECR_REPOSITORY/${{ matrix.service.name }}:latest \
+                     -f ${{ matrix.service.dockerfile }} .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY/${{ matrix.service.name }}:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY/${{ matrix.service.name }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+    
+    - name: Deploy to Kubernetes
+      run: |
+        # Update image tags in manifests
+        export IMAGE_TAG=${{ github.sha }}
+        
+        # Apply Kubernetes manifests
+        kubectl apply -f kubernetes/namespace.yaml
+        kubectl apply -f kubernetes/configmap.yaml
+        kubectl apply -f kubernetes/postgres.yaml
+        
+        # Update deployments with new image tags
+        kubectl set image deployment/auth-service auth-service=$ECR_REGISTRY/$ECR_REPOSITORY/auth-service:$IMAGE_TAG -n diagnyx
+        kubectl set image deployment/ingestion-service ingestion-service=$ECR_REGISTRY/$ECR_REPOSITORY/ingestion-service:$IMAGE_TAG -n diagnyx
+        kubectl set image deployment/dashboard dashboard=$ECR_REGISTRY/$ECR_REPOSITORY/dashboard:$IMAGE_TAG -n diagnyx
+        
+        # Wait for rollout to complete
+        kubectl rollout status deployment/auth-service -n diagnyx
+        kubectl rollout status deployment/ingestion-service -n diagnyx
+        kubectl rollout status deployment/dashboard -n diagnyx
+    
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be ready
+        sleep 30
+        
+        # Test endpoints
+        kubectl run smoke-test --image=curlimages/curl:latest --rm -i --restart=Never -- \
+          curl -f http://ingestion-service.diagnyx.svc.cluster.local:8080/health
+        
+        kubectl run smoke-test-auth --image=curlimages/curl:latest --rm -i --restart=Never -- \
+          curl -f http://auth-service.diagnyx.svc.cluster.local:3001/health
+
+  notify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Slack Notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: |
+          Deployment to Production: ${{ job.status }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always()
