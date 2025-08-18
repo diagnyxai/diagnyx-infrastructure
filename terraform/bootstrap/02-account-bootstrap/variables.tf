@@ -44,7 +44,6 @@ variable "initial_parameters" {
   description = "Initial SSM parameters to create"
   type        = map(string)
   default     = {}
-  sensitive   = true
 }
 
 # Environment-specific budget limits (no recurring cost)

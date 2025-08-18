@@ -5,6 +5,10 @@
 terraform {
   required_version = ">= 1.5.0"
   
+  backend "s3" {
+    # Backend configuration provided by backend-config.hcl
+  }
+  
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -102,9 +106,10 @@ resource "aws_cloudtrail" "audit" {
     read_write_type           = "All"
     include_management_events = true
     
+    # Track S3 bucket-level events
     data_resource {
       type   = "AWS::S3::Object"
-      values = ["arn:aws:s3:::*/*"]
+      values = ["arn:aws:s3:::diagnyx-*/*"]
     }
   }
   
@@ -136,6 +141,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "audit_logs" {
   rule {
     id     = "archive-old-logs"
     status = "Enabled"
+    
+    filter {}  # Apply to all objects
     
     transition {
       days          = 30
@@ -305,24 +312,6 @@ resource "aws_ecr_repository" "app_images" {
     scan_on_push = var.environment == "production" ? true : false
   }
   
-  lifecycle_policy {
-    policy = jsonencode({
-      rules = [
-        {
-          rulePriority = 1
-          description  = "Keep last 10 images"
-          selection = {
-            tagStatus     = "any"
-            countType     = "imageCountMoreThan"
-            countNumber   = 10
-          }
-          action = {
-            type = "expire"
-          }
-        }
-      ]
-    })
-  }
   
   tags = merge(
     local.common_tags,

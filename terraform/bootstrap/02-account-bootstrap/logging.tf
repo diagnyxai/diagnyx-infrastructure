@@ -74,7 +74,8 @@ resource "aws_cloudwatch_log_group" "application_logs" {
   name              = each.key
   retention_in_days = each.value.retention_days
   
-  kms_key_id = aws_kms_key.logs.arn
+  # KMS encryption will be added later
+  # kms_key_id = aws_kms_key.logs.arn
   
   tags = merge(
     local.common_tags,
