@@ -32,7 +32,7 @@ services:
     build:
       context: ../../ai-quality-service
       dockerfile: Dockerfile
-    container_name: diagnyx-ai-quality
+    container_name: diagnyx-ai-quality-service
     ports:
       - "8002:8002"
     environment:
@@ -49,7 +49,7 @@ services:
     build:
       context: ../../observability-service
       dockerfile: Dockerfile
-    container_name: diagnyx-observability
+    container_name: diagnyx-observability-service
     ports:
       - "8080:8080"
     environment:
@@ -68,7 +68,7 @@ services:
     build:
       context: ../../optimization-service
       dockerfile: Dockerfile
-    container_name: diagnyx-optimization
+    container_name: diagnyx-optimization-service
     ports:
       - "8003:8003"
     environment:
@@ -92,9 +92,9 @@ services:
       PORT: 8080
       ENVIRONMENT: development
       USER_SERVICE_URL: http://diagnyx-user-service:8001
-      OBSERVABILITY_SERVICE_URL: http://diagnyx-observability:8080
-      AI_QUALITY_SERVICE_URL: http://diagnyx-ai-quality:8002
-      OPTIMIZATION_SERVICE_URL: http://diagnyx-optimization:8003
+      OBSERVABILITY_SERVICE_URL: http://diagnyx-observability-service:8080
+      AI_QUALITY_SERVICE_URL: http://diagnyx-ai-quality-service:8002
+      OPTIMIZATION_SERVICE_URL: http://diagnyx-optimization-service:8003
       REDIS_URL: redis://cache-redis:6379
     networks:
       - diagnyx-workspace
