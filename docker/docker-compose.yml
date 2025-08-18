@@ -1,14 +1,10 @@
 name: diagnyx-services
 
 services:
-  # Note: PostgreSQL and Redis are now provided by shared infrastructure containers:
-  # - database-postgres on localhost:5433
-  # - cache-redis on localhost:6380
-
-  # Note: Kafka, Zookeeper, and Elasticsearch are now provided by shared infrastructure:
-  # - messaging-kafka on localhost:9093
-  # - messaging-zookeeper on localhost:2182 
-  # - search-elasticsearch on localhost:9201
+  # IMPORTANT: NO databases, caches, or infrastructure services here!
+  # Use ONLY shared services from docker:
+  # - database-postgres (host.docker.internal:5433)
+  # - cache-redis (host.docker.internal:6380)
 
   # User Service
   user-service:
@@ -18,11 +14,8 @@ services:
     container_name: diagnyx-user-service
     ports:
       - "8001:8001"
-    environment:
-      SPRING_PROFILES_ACTIVE: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
-      JWT_SECRET: dev-jwt-secret
+    env_file:
+      - ../../user-service/.env
     networks:
       - diagnyx-workspace
       - shared-infra-services
@@ -35,11 +28,8 @@ services:
     container_name: diagnyx-ai-quality-service
     ports:
       - "8002:8002"
-    environment:
-      PORT: 8002
-      ENVIRONMENT: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
+    env_file:
+      - ../../ai-quality-service/.env
     networks:
       - diagnyx-workspace
       - shared-infra-services
@@ -52,13 +42,8 @@ services:
     container_name: diagnyx-observability-service
     ports:
       - "8080:8080"
-    environment:
-      PORT: 8080
-      ENVIRONMENT: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
-      KAFKA_BROKER_URL: messaging-kafka:29092
-      ELASTICSEARCH_URL: http://search-elasticsearch:9200
+    env_file:
+      - ../../observability-service/.env
     networks:
       - diagnyx-workspace
       - shared-infra-services
@@ -71,47 +56,57 @@ services:
     container_name: diagnyx-optimization-service
     ports:
       - "8003:8003"
-    environment:
-      PORT: 8003
-      ENVIRONMENT: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
+    env_file:
+      - ../../optimization-service/.env
     networks:
       - diagnyx-workspace
       - shared-infra-services
 
   # API Gateway (Node.js/Express)
-  api-gateway:
+  diagnyx-api-gateway:
     build:
       context: ../../diagnyx-api-gateway
       dockerfile: Dockerfile
     container_name: diagnyx-api-gateway
     ports:
-      - "8000:8080"
-    environment:
-      PORT: 8080
-      ENVIRONMENT: development
-      USER_SERVICE_URL: http://diagnyx-user-service:8001
-      OBSERVABILITY_SERVICE_URL: http://diagnyx-observability-service:8080
-      AI_QUALITY_SERVICE_URL: http://diagnyx-ai-quality-service:8002
-      OPTIMIZATION_SERVICE_URL: http://diagnyx-optimization-service:8003
-      REDIS_URL: redis://cache-redis:6379
+      - "8443:8080"  # Maps external 8443 to internal 8080
+    env_file:
+      - ../../diagnyx-api-gateway/.env
+    depends_on:
+      - user-service
+      - observability-service
+      - ai-quality-service
+      - optimization-service
     networks:
       - diagnyx-workspace
       - shared-infra-services
 
-  # Diagnyx UI (Unified Website and Dashboard)
+  # Diagnyx UI (Marketing Website)
   diagnyx-ui:
     build:
       context: ../../diagnyx-ui
       dockerfile: Dockerfile
     container_name: diagnyx-ui
     ports:
+      - "3002:3002"
+    env_file:
+      - ../../diagnyx-ui/.env
+    networks:
+      - diagnyx-workspace
+      - shared-infra-services
+
+  # Dashboard Service (Main Dashboard)
+  dashboard-service:
+    build:
+      context: ../../dashboard-service
+      dockerfile: Dockerfile
+    container_name: diagnyx-dashboard-service
+    ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
-      NEXT_PUBLIC_AUTH_URL: http://localhost:3001
-      NEXT_PUBLIC_ENVIRONMENT: development
+    env_file:
+      - ../../dashboard-service/.env
+    depends_on:
+      - diagnyx-api-gateway
     networks:
       - diagnyx-workspace
       - shared-infra-services
@@ -129,3 +124,4 @@ networks:
     driver: bridge
   shared-infra-services:
     external: true
+    name: shared-infra-services
