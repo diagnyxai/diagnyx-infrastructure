@@ -1,0 +1,148 @@
+# AWS Budgets and Cost Management
+# Cost: FREE (2 budgets per account free, then $0.02/day per additional budget)
+# Purpose: Cost control and monitoring across all accounts
+
+locals {
+  # Budget configurations per account type - Starting with minimal budgets
+  budget_configs = {
+    development = {
+      monthly_limit = 25  # $25 for dev
+      alert_thresholds = [50, 80, 100]
+    }
+    staging = {
+      monthly_limit = 25  # $25 for staging
+      alert_thresholds = [50, 80, 100]
+    }
+    uat = {
+      monthly_limit = 25  # $25 for UAT
+      alert_thresholds = [50, 80, 100]
+    }
+    production = {
+      monthly_limit = 50  # $50 for production
+      alert_thresholds = [50, 80, 100, 120]
+    }
+    shared = {
+      monthly_limit = 25  # $25 for shared services
+      alert_thresholds = [50, 80, 100]
+    }
+  }
+}
+
+# Monthly budget per account
+resource "aws_budgets_budget" "monthly" {
+  name         = "diagnyx-${var.environment}-monthly-budget"
+  budget_type  = "COST"
+  limit_amount = local.budget_configs[var.environment].monthly_limit
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  cost_filter {
+    name = "LinkedAccount"
+    values = [data.aws_caller_identity.current.account_id]
+  }
+
+  # Multiple notification thresholds
+  dynamic "notification" {
+    for_each = local.budget_configs[var.environment].alert_thresholds
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = notification.value
+      threshold_type            = "PERCENTAGE"
+      notification_type         = "ACTUAL"
+      subscriber_email_addresses = [var.budget_alert_email]
+    }
+  }
+}
+
+# Daily budget for spike detection
+resource "aws_budgets_budget" "daily_spike" {
+  name         = "diagnyx-${var.environment}-daily-spike-budget"
+  budget_type  = "COST"
+  limit_amount = local.budget_configs[var.environment].monthly_limit / 30
+  limit_unit   = "USD"
+  time_unit    = "DAILY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 150  # Alert if daily spend is 150% of average
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Service-specific budgets for production
+resource "aws_budgets_budget" "service_specific" {
+  for_each = var.environment == "production" ? {
+    compute = {
+      service = "Amazon Elastic Compute Cloud - Compute"
+      limit   = 500
+    }
+    rds = {
+      service = "Amazon Relational Database Service"
+      limit   = 200
+    }
+    storage = {
+      service = "Amazon Simple Storage Service"
+      limit   = 50
+    }
+  } : {}
+
+  name         = "diagnyx-${var.environment}-${each.key}-budget"
+  budget_type  = "COST"
+  limit_amount = each.value.limit
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  cost_filter {
+    name   = "Service"
+    values = [each.value.service]
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# RI/Savings Plan utilization budget (master account only)
+resource "aws_budgets_budget" "savings_utilization" {
+  count = var.is_master_account ? 1 : 0
+
+  name        = "diagnyx-savings-plan-utilization"
+  budget_type = "SAVINGS_PLANS_UTILIZATION"
+  
+  cost_types {
+    include_credit             = false
+    include_discount           = true
+    include_other_subscription = false
+    include_recurring          = true
+    include_refund            = false
+    include_subscription      = true
+    include_support           = false
+    include_tax               = false
+    include_upfront           = false
+    use_amortized             = false
+  }
+
+  notification {
+    comparison_operator        = "LESS_THAN"
+    threshold                  = 90  # Alert if utilization drops below 90%
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Budget outputs
+output "budget_ids" {
+  value = {
+    monthly      = aws_budgets_budget.monthly.id
+    daily_spike  = aws_budgets_budget.daily_spike.id
+    service      = { for k, v in aws_budgets_budget.service_specific : k => v.id }
+  }
+  description = "Budget IDs for reference"
+}

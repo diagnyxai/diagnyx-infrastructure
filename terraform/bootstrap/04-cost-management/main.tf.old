@@ -1,0 +1,238 @@
+# Cost Management Setup - Budgets and Alerts
+# Sets up budgets for each account with email alerts
+
+terraform {
+  required_version = ">= 1.5.0"
+  
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+  
+  backend "s3" {}
+}
+
+provider "aws" {
+  region = "us-east-1"
+  
+  default_tags {
+    tags = {
+      Project     = "Diagnyx"
+      Component   = "CostManagement"
+      ManagedBy   = "Terraform"
+    }
+  }
+}
+
+# Budget for Development Account
+resource "aws_budgets_budget" "development" {
+  name              = "diagnyx-development-budget"
+  budget_type       = "COST"
+  limit_amount      = "25"
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Budget for Staging Account
+resource "aws_budgets_budget" "staging" {
+  name              = "diagnyx-staging-budget"
+  budget_type       = "COST"
+  limit_amount      = "25"
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Budget for UAT Account
+resource "aws_budgets_budget" "uat" {
+  name              = "diagnyx-uat-budget"
+  budget_type       = "COST"
+  limit_amount      = "25"
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Budget for Production Account
+resource "aws_budgets_budget" "production" {
+  name              = "diagnyx-production-budget"
+  budget_type       = "COST"
+  limit_amount      = "50"
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 120
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Budget for Shared Services Account
+resource "aws_budgets_budget" "shared" {
+  name              = "diagnyx-shared-budget"
+  budget_type       = "COST"
+  limit_amount      = "25"
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+  }
+}
+
+# Cost Anomaly Detector
+resource "aws_ce_anomaly_monitor" "main" {
+  name              = "diagnyx-cost-anomaly-monitor"
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
+
+  monitor_specification = jsonencode({
+    Dimensions = {
+      Key          = "LINKED_ACCOUNT"
+      Values       = null
+      MatchOptions = null
+    }
+  })
+}
+
+# Cost Anomaly Subscription
+resource "aws_ce_anomaly_subscription" "main" {
+  name      = "diagnyx-cost-anomaly-alerts"
+  frequency = "DAILY"
+
+  monitor_arn_list = [
+    aws_ce_anomaly_monitor.main.arn
+  ]
+
+  subscriber {
+    type    = "EMAIL"
+    address = var.budget_alert_email
+  }
+
+  threshold_expression {
+    dimension {
+      key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
+      values        = ["10"]
+      match_options = ["GREATER_THAN_OR_EQUAL"]
+    }
+  }
+}

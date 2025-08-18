@@ -30,13 +30,42 @@ module "eks" {
   
   # EKS Managed Node Group
   eks_managed_node_groups = {
-    general = {
-      desired_size = var.eks_node_group_desired_size
-      min_size     = var.eks_node_group_min_size
-      max_size     = var.eks_node_group_max_size
+    # On-demand node group for critical workloads
+    on_demand = {
+      desired_size = max(1, floor(var.eks_node_group_desired_size * 0.3))
+      min_size     = 1
+      max_size     = max(3, floor(var.eks_node_group_max_size * 0.3))
       
       instance_types = var.eks_node_instance_types
-      capacity_type  = var.enable_spot_instances ? "SPOT" : "ON_DEMAND"
+      capacity_type  = "ON_DEMAND"
+      
+      update_config = {
+        max_unavailable_percentage = 33
+      }
+      
+      labels = {
+        Environment = var.environment
+        NodeGroup   = "on-demand"
+        WorkloadType = "critical"
+      }
+      
+      taints = []
+      
+      tags = {
+        "k8s.io/cluster-autoscaler/enabled" = "true"
+        "k8s.io/cluster-autoscaler/${local.name_prefix}-eks" = "owned"
+        "CostOptimization" = "on-demand-baseline"
+      }
+    }
+    
+    # Spot instance node group for non-critical workloads
+    spot = {
+      desired_size = var.enable_spot_instances ? ceil(var.eks_node_group_desired_size * 0.7) : 0
+      min_size     = var.enable_spot_instances ? 1 : 0
+      max_size     = var.enable_spot_instances ? ceil(var.eks_node_group_max_size * 0.7) : 0
+      
+      instance_types = var.eks_spot_instance_types
+      capacity_type  = "SPOT"
       
       update_config = {
         max_unavailable_percentage = 50
@@ -44,12 +73,23 @@ module "eks" {
       
       labels = {
         Environment = var.environment
-        NodeGroup   = "general"
+        NodeGroup   = "spot"
+        WorkloadType = "non-critical"
+        InstanceLifecycle = "spot"
       }
+      
+      taints = [
+        {
+          key    = "spot-instance"
+          value  = "true"
+          effect = "NoSchedule"
+        }
+      ]
       
       tags = {
         "k8s.io/cluster-autoscaler/enabled" = "true"
         "k8s.io/cluster-autoscaler/${local.name_prefix}-eks" = "owned"
+        "CostOptimization" = "spot-instances"
       }
     }
     

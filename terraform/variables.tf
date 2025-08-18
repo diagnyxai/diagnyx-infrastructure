@@ -1,7 +1,12 @@
 variable "aws_region" {
-  description = "AWS region for resources"
+  description = "AWS region for resources (must be us-east-1)"
   type        = string
   default     = "us-east-1"
+  
+  validation {
+    condition     = var.aws_region == "us-east-1"
+    error_message = "AWS region must be us-east-1 for all Diagnyx infrastructure."
+  }
 }
 
 variable "environment" {
@@ -48,13 +53,13 @@ variable "eks_cluster_version" {
 variable "eks_node_group_desired_size" {
   description = "Desired number of nodes in EKS node group"
   type        = number
-  default     = 3
+  default     = 2  # Reduced from 3 for cost optimization
 }
 
 variable "eks_node_group_min_size" {
   description = "Minimum number of nodes in EKS node group"
   type        = number
-  default     = 2
+  default     = 1  # Reduced from 2 for cost optimization
 }
 
 variable "eks_node_group_max_size" {
@@ -66,7 +71,13 @@ variable "eks_node_group_max_size" {
 variable "eks_node_instance_types" {
   description = "Instance types for EKS nodes"
   type        = list(string)
-  default     = ["t3.large", "t3.xlarge"]
+  default     = ["t4g.medium", "t4g.large"]  # Switched to ARM-based Graviton for 20% savings
+}
+
+variable "eks_spot_instance_types" {
+  description = "Instance types for spot instances"
+  type        = list(string)
+  default     = ["t4g.medium", "t4g.large", "t3a.medium", "t3a.large"]
 }
 
 # RDS Configuration
@@ -79,23 +90,35 @@ variable "rds_engine_version" {
 variable "rds_instance_class" {
   description = "RDS instance class"
   type        = string
-  default     = "db.r5.large"
+  default     = "db.t4g.medium"  # Changed from db.r5.large for 60% cost savings
+}
+
+variable "rds_instance_class_production" {
+  description = "RDS instance class for production"
+  type        = string
+  default     = "db.t4g.large"  # Graviton-based for better price/performance
 }
 
 variable "rds_allocated_storage" {
   description = "Allocated storage for RDS in GB"
   type        = number
-  default     = 100
+  default     = 50  # Reduced from 100, autoscaling will handle growth
 }
 
 variable "rds_max_allocated_storage" {
   description = "Maximum allocated storage for RDS in GB"
   type        = number
-  default     = 1000
+  default     = 500  # Reduced from 1000
 }
 
 variable "rds_backup_retention_period" {
   description = "Backup retention period in days"
+  type        = number
+  default     = 7  # Reduced from 30 for non-production
+}
+
+variable "rds_backup_retention_period_production" {
+  description = "Backup retention period in days for production"
   type        = number
   default     = 30
 }
@@ -103,20 +126,26 @@ variable "rds_backup_retention_period" {
 variable "rds_multi_az" {
   description = "Enable Multi-AZ for RDS"
   type        = bool
-  default     = true
+  default     = false  # Disabled for non-production
 }
 
 # ElastiCache Configuration
 variable "elasticache_node_type" {
   description = "ElastiCache node type"
   type        = string
-  default     = "cache.r6g.large"
+  default     = "cache.t4g.small"  # Changed from cache.r6g.large for 75% savings
+}
+
+variable "elasticache_node_type_production" {
+  description = "ElastiCache node type for production"
+  type        = string
+  default     = "cache.t4g.medium"  # Graviton-based for production
 }
 
 variable "elasticache_num_cache_nodes" {
   description = "Number of cache nodes"
   type        = number
-  default     = 3
+  default     = 2  # Reduced from 3 for non-production
 }
 
 # S3 Configuration
@@ -162,11 +191,35 @@ variable "enable_deletion_protection" {
 variable "enable_spot_instances" {
   description = "Enable spot instances for non-critical workloads"
   type        = bool
-  default     = false
+  default     = true  # Enabled by default for cost savings
 }
 
 variable "spot_max_price" {
-  description = "Maximum price for spot instances"
+  description = "Maximum price for spot instances (empty = on-demand price)"
   type        = string
-  default     = ""
+  default     = ""  # Uses on-demand price as max
+}
+
+variable "spot_allocation_percentage" {
+  description = "Percentage of capacity to run on spot instances"
+  type        = number
+  default     = 70  # 70% spot, 30% on-demand for balance
+}
+
+variable "enable_scheduled_scaling" {
+  description = "Enable scheduled scaling for dev/staging environments"
+  type        = bool
+  default     = true
+}
+
+variable "scale_down_schedule" {
+  description = "Cron expression for scaling down (UTC)"
+  type        = string
+  default     = "0 20 * * MON-FRI"  # 8 PM UTC (3 PM EST) weekdays
+}
+
+variable "scale_up_schedule" {
+  description = "Cron expression for scaling up (UTC)"
+  type        = string
+  default     = "0 12 * * MON-FRI"  # 12 PM UTC (7 AM EST) weekdays
 }

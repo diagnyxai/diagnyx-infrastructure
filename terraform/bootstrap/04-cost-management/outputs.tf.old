@@ -1,0 +1,22 @@
+# Outputs for Cost Management
+
+output "budget_ids" {
+  value = {
+    development = aws_budgets_budget.development.id
+    staging     = aws_budgets_budget.staging.id
+    uat         = aws_budgets_budget.uat.id
+    production  = aws_budgets_budget.production.id
+    shared      = aws_budgets_budget.shared.id
+  }
+  description = "Budget IDs for all accounts"
+}
+
+output "anomaly_monitor_arn" {
+  value       = aws_ce_anomaly_monitor.main.arn
+  description = "ARN of the cost anomaly monitor"
+}
+
+output "anomaly_subscription_arn" {
+  value       = aws_ce_anomaly_subscription.main.arn
+  description = "ARN of the cost anomaly subscription"
+}

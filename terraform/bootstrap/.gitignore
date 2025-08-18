@@ -1,0 +1,22 @@
+# Ignore actual environment file with credentials
+.env
+
+# Ignore terraform files
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Ignore any credential files
+*.pem
+*.key
+credentials.json
+aws-credentials.txt
+
+# Ignore backup files
+*.backup
+*.bak
+
+# OS files
+.DS_Store
+Thumbs.db

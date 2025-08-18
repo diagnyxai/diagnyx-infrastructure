@@ -1,0 +1,494 @@
+# Centralized Billing and Cost Management
+# Run this in the MASTER account to set up consolidated billing
+# Most features are FREE - only pay for what you use
+
+# Enable Cost and Usage Report (minimal S3 storage cost)
+resource "aws_cur_report_definition" "main" {
+  report_name                = "diagnyx-cost-usage-report"
+  time_unit                  = "DAILY"
+  format                     = "Parquet"  # Better for analysis
+  compression                = "GZIP"
+  additional_schema_elements = ["RESOURCES"]
+  s3_bucket                  = aws_s3_bucket.cur_reports.id
+  s3_prefix                  = "cur"
+  s3_region                  = var.aws_region
+  additional_artifacts       = ["ATHENA"]  # Enable Athena integration
+  refresh_closed_reports     = true
+  report_versioning          = "OVERWRITE_REPORT"
+}
+
+# S3 Bucket for Cost and Usage Reports
+resource "aws_s3_bucket" "cur_reports" {
+  bucket = "diagnyx-cost-reports-${data.aws_caller_identity.current.account_id}"
+  
+  tags = {
+    Purpose = "cost-usage-reports"
+    Service = "billing"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "cur_reports" {
+  bucket = aws_s3_bucket.cur_reports.id
+  
+  rule {
+    id     = "delete-old-reports"
+    status = "Enabled"
+    
+    expiration {
+      days = 90  # Keep 3 months of reports
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "cur_reports" {
+  bucket = aws_s3_bucket.cur_reports.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "billingreports.amazonaws.com"
+        }
+        Action = [
+          "s3:GetBucketAcl",
+          "s3:GetBucketPolicy"
+        ]
+        Resource = aws_s3_bucket.cur_reports.arn
+      },
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "billingreports.amazonaws.com"
+        }
+        Action = "s3:PutObject"
+        Resource = "${aws_s3_bucket.cur_reports.arn}/*"
+      }
+    ]
+  })
+}
+
+# Cost Allocation Tags (FREE)
+resource "aws_ce_cost_allocation_tag" "required_tags" {
+  for_each = toset([
+    "Environment",
+    "Project",
+    "CostCenter",
+    "Team",
+    "Service",
+    "Owner",
+    "Application"
+  ])
+  
+  tag_key = each.value
+  status  = "Active"
+}
+
+# Cost Categories for Better Organization (FREE)
+resource "aws_ce_cost_category" "environments" {
+  name = "EnvironmentCategories"
+  
+  rule {
+    value = "Production"
+    rule {
+      tags {
+        key    = "Environment"
+        values = ["production", "prd"]
+      }
+    }
+  }
+  
+  rule {
+    value = "NonProduction"
+    rule {
+      tags {
+        key    = "Environment"
+        values = ["development", "dev", "staging", "stg", "uat"]
+      }
+    }
+  }
+  
+  rule {
+    value = "Shared"
+    rule {
+      tags {
+        key    = "Environment"
+        values = ["shared", "security"]
+      }
+    }
+  }
+  
+  rule {
+    value = "Untagged"
+    rule {
+      not {
+        tags {
+          key = "Environment"
+        }
+      }
+    }
+  }
+}
+
+resource "aws_ce_cost_category" "services" {
+  name = "ServiceCategories"
+  
+  rule {
+    value = "Compute"
+    rule {
+      dimension {
+        key    = "SERVICE"
+        values = [
+          "Amazon Elastic Compute Cloud - Compute",
+          "Amazon Elastic Container Service",
+          "Amazon Elastic Kubernetes Service",
+          "AWS Lambda"
+        ]
+      }
+    }
+  }
+  
+  rule {
+    value = "Storage"
+    rule {
+      dimension {
+        key    = "SERVICE"
+        values = [
+          "Amazon Simple Storage Service",
+          "Amazon Elastic Block Store",
+          "Amazon Elastic File System"
+        ]
+      }
+    }
+  }
+  
+  rule {
+    value = "Database"
+    rule {
+      dimension {
+        key    = "SERVICE"
+        values = [
+          "Amazon Relational Database Service",
+          "Amazon DynamoDB",
+          "Amazon ElastiCache",
+          "Amazon DocumentDB"
+        ]
+      }
+    }
+  }
+  
+  rule {
+    value = "Network"
+    rule {
+      dimension {
+        key    = "SERVICE"
+        values = [
+          "Amazon Virtual Private Cloud",
+          "Amazon CloudFront",
+          "Amazon Route 53",
+          "AWS Direct Connect"
+        ]
+      }
+    }
+  }
+}
+
+# Consolidated Budget for All Accounts (FREE - up to 2 budgets)
+resource "aws_budgets_budget" "consolidated_monthly" {
+  name              = "diagnyx-consolidated-monthly"
+  budget_type       = "COST"
+  limit_amount      = var.total_monthly_budget
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  
+  cost_filter {
+    name   = "LinkedAccount"
+    values = values(var.account_ids)
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = var.budget_notification_emails
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = var.budget_notification_emails
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = var.budget_notification_emails
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 90
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "FORECASTED"
+    subscriber_email_addresses = var.budget_notification_emails
+  }
+}
+
+# Per-Account Budgets
+resource "aws_budgets_budget" "per_account" {
+  for_each = var.account_budgets
+  
+  name              = "diagnyx-${each.key}-monthly"
+  budget_type       = "COST"
+  limit_amount      = each.value
+  limit_unit        = "USD"
+  time_unit         = "MONTHLY"
+  
+  cost_filter {
+    name   = "LinkedAccount"
+    values = [var.account_ids[each.key]]
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = var.budget_notification_emails
+  }
+  
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = var.budget_notification_emails
+  }
+}
+
+# Cost Anomaly Monitors (FREE)
+resource "aws_ce_anomaly_monitor" "by_service" {
+  name              = "diagnyx-service-anomalies"
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
+}
+
+resource "aws_ce_anomaly_monitor" "by_account" {
+  name         = "diagnyx-account-anomalies"
+  monitor_type = "CUSTOM"
+  
+  monitor_specification = jsonencode({
+    Dimensions = {
+      Key          = "LINKED_ACCOUNT"
+      Values       = values(var.account_ids)
+      MatchOptions = ["EQUALS"]
+    }
+  })
+}
+
+resource "aws_ce_anomaly_subscription" "alerts" {
+  name      = "diagnyx-anomaly-alerts"
+  frequency = "DAILY"
+  threshold = 50  # Alert on anomalies over $50
+  
+  monitor_arn_list = [
+    aws_ce_anomaly_monitor.by_service.arn,
+    aws_ce_anomaly_monitor.by_account.arn
+  ]
+  
+  subscriber {
+    type    = "EMAIL"
+    address = var.cost_anomaly_email
+  }
+}
+
+# Savings Plans Recommendations (FREE to view)
+data "aws_ce_savings_plans_utilization" "current" {
+  time_period {
+    start = formatdate("YYYY-MM-DD", timestamp())
+    end   = formatdate("YYYY-MM-DD", timeadd(timestamp(), "24h"))
+  }
+}
+
+# Reserved Instance Recommendations (FREE to view)
+data "aws_ce_reservation_utilization" "current" {
+  time_period {
+    start = formatdate("YYYY-MM-DD", timestamp())
+    end   = formatdate("YYYY-MM-DD", timeadd(timestamp(), "24h"))
+  }
+}
+
+# IAM Role for Cost Explorer Access from Sub-Accounts
+resource "aws_iam_role" "cost_explorer_access" {
+  name = "DiagnyxCostExplorerAccess"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          AWS = [for id in values(var.account_ids) : "arn:aws:iam::${id}:root"]
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "cost_explorer_access" {
+  name = "DiagnyxCostExplorerAccessPolicy"
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ce:GetCostAndUsage",
+          "ce:GetCostForecast",
+          "ce:GetReservationUtilization",
+          "ce:GetSavingsPlansUtilization",
+          "ce:GetRightsizingRecommendation",
+          "ce:GetReservationPurchaseRecommendation",
+          "ce:GetSavingsPlansPurchaseRecommendation",
+          "ce:ListCostCategoryDefinitions",
+          "ce:ListTagsForResource",
+          "ce:DescribeCostCategoryDefinition",
+          "ce:GetAnomalies",
+          "ce:GetAnomalyMonitors",
+          "ce:GetAnomalySubscriptions"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "budgets:ViewBudget",
+          "budgets:DescribeBudget",
+          "budgets:DescribeBudgets"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "pricing:GetProducts",
+          "pricing:GetAttributeValues",
+          "pricing:DescribeServices"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cost_explorer_access" {
+  role       = aws_iam_role.cost_explorer_access.name
+  policy_arn = aws_iam_policy.cost_explorer_access.arn
+}
+
+# Athena Setup for Cost Analysis (pay per query)
+resource "aws_glue_catalog_database" "cost_analysis" {
+  name = "diagnyx_cost_analysis"
+  
+  description = "Database for analyzing AWS Cost and Usage Reports"
+}
+
+resource "aws_athena_workgroup" "cost_analysis" {
+  name = "diagnyx-cost-analysis"
+  
+  configuration {
+    enforce_workgroup_configuration    = true
+    publish_cloudwatch_metrics_enabled = true
+    
+    result_configuration {
+      output_location = "s3://${aws_s3_bucket.athena_results.id}/"
+      
+      encryption_configuration {
+        encryption_option = "SSE_S3"
+      }
+    }
+  }
+}
+
+resource "aws_s3_bucket" "athena_results" {
+  bucket = "diagnyx-athena-results-${data.aws_caller_identity.current.account_id}"
+  
+  tags = {
+    Purpose = "athena-query-results"
+    Service = "cost-analysis"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "athena_results" {
+  bucket = aws_s3_bucket.athena_results.id
+  
+  rule {
+    id     = "delete-old-results"
+    status = "Enabled"
+    
+    expiration {
+      days = 30  # Delete query results after 30 days
+    }
+  }
+}
+
+# Outputs
+output "cost_report_bucket" {
+  value       = aws_s3_bucket.cur_reports.id
+  description = "S3 bucket containing Cost and Usage Reports"
+}
+
+output "cost_explorer_role_arn" {
+  value       = aws_iam_role.cost_explorer_access.arn
+  description = "IAM role ARN for Cost Explorer access"
+}
+
+output "athena_workgroup" {
+  value       = aws_athena_workgroup.cost_analysis.name
+  description = "Athena workgroup for cost analysis"
+}
+
+# Variables
+variable "total_monthly_budget" {
+  description = "Total monthly budget for all accounts"
+  type        = number
+  default     = 3000  # $3000/month total
+}
+
+variable "account_budgets" {
+  description = "Budget limits per account"
+  type        = map(number)
+  default = {
+    development = 200
+    staging     = 400
+    uat         = 300
+    production  = 1800
+    shared      = 200
+    security    = 100
+  }
+}
+
+variable "account_ids" {
+  description = "Map of account names to IDs"
+  type        = map(string)
+}
+
+variable "budget_notification_emails" {
+  description = "Email addresses for budget notifications"
+  type        = list(string)
+  default     = ["finance@diagnyx.ai", "ops@diagnyx.ai"]
+}
+
+variable "cost_anomaly_email" {
+  description = "Email for cost anomaly alerts"
+  type        = string
+  default     = "ops@diagnyx.ai"
+}

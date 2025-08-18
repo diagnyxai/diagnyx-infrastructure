@@ -1,0 +1,219 @@
+# Maximum Spending Limits Configuration
+# These are HARD LIMITS that will trigger automatic resource shutdown
+
+locals {
+  # Maximum spending limits per account (monthly) - Starting with minimal budgets
+  max_spending_limits = {
+    development = {
+      soft_limit = 25     # Alert only at $25
+      hard_limit = 30     # Start scaling down at $30
+      emergency  = 35     # Stop everything non-essential at $35
+    }
+    staging = {
+      soft_limit = 25
+      hard_limit = 30
+      emergency  = 35
+    }
+    uat = {
+      soft_limit = 25
+      hard_limit = 30
+      emergency  = 35
+    }
+    production = {
+      soft_limit = 50     # Alert at $50
+      hard_limit = 60     # Scale down non-critical at $60
+      emergency  = 75     # Emergency mode at $75
+    }
+    shared = {
+      soft_limit = 25
+      hard_limit = 30
+      emergency  = 35
+    }
+  }
+  
+  # Daily spending limits (to catch runaway costs quickly)
+  daily_spending_limits = {
+    development = {
+      normal    = 1       # $25/month ÷ 30 days ≈ $0.83
+      warning   = 2       # 200% of normal
+      critical  = 3       # Take action
+    }
+    staging = {
+      normal    = 1
+      warning   = 2
+      critical  = 3
+    }
+    uat = {
+      normal    = 1
+      warning   = 2
+      critical  = 3
+    }
+    production = {
+      normal    = 2       # $50/month ÷ 30 days ≈ $1.67
+      warning   = 3       # 150% of normal
+      critical  = 5       # Take action
+    }
+    shared = {
+      normal    = 1
+      warning   = 2
+      critical  = 3
+    }
+  }
+}
+
+# Create multiple budgets with different thresholds
+resource "aws_budgets_budget" "hard_limit" {
+  name         = "diagnyx-${var.environment}-hard-limit"
+  budget_type  = "COST"
+  limit_amount = local.max_spending_limits[var.environment].hard_limit
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
+    subscriber_sns_topic_arns  = [aws_sns_topic.cost_alerts.arn]
+  }
+  
+  # This notification triggers Lambda for automatic action
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_sns_topic_arns  = [aws_sns_topic.budget_action_trigger.arn]
+  }
+}
+
+resource "aws_budgets_budget" "emergency_limit" {
+  name         = "diagnyx-${var.environment}-emergency-limit"
+  budget_type  = "COST"
+  limit_amount = local.max_spending_limits[var.environment].emergency
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [
+      var.budget_alert_email,
+      var.emergency_contact_email
+    ]
+    subscriber_sns_topic_arns  = [
+      aws_sns_topic.cost_alerts.arn,
+      aws_sns_topic.emergency_shutdown.arn
+    ]
+  }
+}
+
+# SNS topic that triggers automatic budget actions
+resource "aws_sns_topic" "budget_action_trigger" {
+  name = "diagnyx-${var.environment}-budget-action-trigger"
+  
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "Budget Action Trigger"
+    }
+  )
+}
+
+resource "aws_sns_topic_subscription" "trigger_lambda" {
+  topic_arn = aws_sns_topic.budget_action_trigger.arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.cost_controller.arn
+}
+
+# SNS topic for emergency shutdown
+resource "aws_sns_topic" "emergency_shutdown" {
+  name = "diagnyx-${var.environment}-emergency-shutdown"
+  
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "Emergency Shutdown Trigger"
+    }
+  )
+}
+
+# Lambda permission for SNS to invoke
+resource "aws_lambda_permission" "sns_invoke" {
+  statement_id  = "AllowSNSInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cost_controller.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.budget_action_trigger.arn
+}
+
+# CloudWatch Dashboard for spending visualization
+resource "aws_cloudwatch_dashboard" "spending" {
+  dashboard_name = "diagnyx-${var.environment}-spending"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["AWS/Billing", "EstimatedCharges", { stat = "Maximum", label = "Current Spend" }]
+          ]
+          period = 86400
+          stat   = "Maximum"
+          region = "us-east-1"
+          title  = "Current Month Spending"
+          annotations = {
+            horizontal = [
+              {
+                label = "Soft Limit"
+                value = local.max_spending_limits[var.environment].soft_limit
+              },
+              {
+                label = "Hard Limit"
+                value = local.max_spending_limits[var.environment].hard_limit
+                fill  = "above"
+                color = "#ff0000"
+              }
+            ]
+          }
+        }
+      },
+      {
+        type = "metric"
+        properties = {
+          metrics = [
+            ["AWS/Billing", "EstimatedCharges", { stat = "Maximum", label = "Daily Spend" }]
+          ]
+          period = 86400
+          stat   = "Maximum"
+          region = "us-east-1"
+          title  = "Daily Spending Trend"
+        }
+      }
+    ]
+  })
+}
+
+# Outputs
+output "spending_limits" {
+  value = {
+    soft_limit = local.max_spending_limits[var.environment].soft_limit
+    hard_limit = local.max_spending_limits[var.environment].hard_limit
+    emergency  = local.max_spending_limits[var.environment].emergency
+  }
+  description = "Configured spending limits for ${var.environment}"
+}
+
+output "daily_limits" {
+  value = local.daily_spending_limits[var.environment]
+  description = "Daily spending limits for ${var.environment}"
+}
+
+output "dashboard_url" {
+  value = "https://console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=diagnyx-${var.environment}-spending"
+  description = "CloudWatch dashboard URL for spending monitoring"
+}

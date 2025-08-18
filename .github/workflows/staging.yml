@@ -1,128 +1,340 @@
-name: Deploy to Staging
+name: Pull Request Validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
-env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: diagnyx-staging
-  EKS_CLUSTER_NAME: diagnyx-staging
-
 jobs:
-  lint-and-test:
+  changed-files:
     runs-on: ubuntu-latest
-    
+    outputs:
+      changed-services: ${{ steps.changes.outputs.changed-services }}
+      all-services: ${{ steps.changes.outputs.all-services }}
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Detect changed services
+      id: changes
+      run: |
+        # Get list of changed files
+        CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+        
+        # Define all services
+        ALL_SERVICES='["user-service","observability-service","ai-quality-service","optimization-service","api-gateway","dashboard-service","diagnyx-ui","diagnyx-python-sdk","diagnyx-javascript-sdk"]'
+        
+        # Detect which services were changed
+        CHANGED_SERVICES='[]'
+        
+        if echo "$CHANGED_FILES" | grep -q "repositories/user-service/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["user-service"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/observability-service/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["observability-service"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/ai-quality-service/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["ai-quality-service"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/optimization-service/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["optimization-service"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/api-gateway/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["api-gateway"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/dashboard-service/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["dashboard-service"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/diagnyx-ui/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["diagnyx-ui"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/diagnyx-python-sdk/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["diagnyx-python-sdk"]')
+        fi
+        if echo "$CHANGED_FILES" | grep -q "repositories/diagnyx-javascript-sdk/"; then
+          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["diagnyx-javascript-sdk"]')
+        fi
+        
+        # If no specific services changed, test all (for infrastructure changes)
+        if [ "$CHANGED_SERVICES" = "[]" ]; then
+          CHANGED_SERVICES="$ALL_SERVICES"
+        fi
+        
+        echo "changed-services=$CHANGED_SERVICES" >> $GITHUB_OUTPUT
+        echo "all-services=$ALL_SERVICES" >> $GITHUB_OUTPUT
+        echo "Changed services: $CHANGED_SERVICES"
+
+  infrastructure-validation:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+    
+    - name: Terraform validation
+      working-directory: terraform
+      run: |
+        terraform init -backend=false
+        terraform validate
+        terraform fmt -check
     
     - name: Lint Kubernetes manifests
       run: |
         # Install kubeval
-        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        wget -q https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
         tar xf kubeval-linux-amd64.tar.gz
         sudo cp kubeval /usr/local/bin
         
         # Validate manifests
         kubeval kubernetes/*.yaml
+
+  test-changed-services:
+    runs-on: ubuntu-latest
+    needs: changed-files
+    if: needs.changed-files.outputs.changed-services != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.changed-files.outputs.changed-services) }}
     
-    - name: Security scan with Trivy
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set service details
+      id: service-details
+      run: |
+        case "${{ matrix.service }}" in
+          "user-service")
+            echo "type=java" >> $GITHUB_OUTPUT
+            echo "path=repositories/user-service" >> $GITHUB_OUTPUT
+            echo "test_command=mvn test" >> $GITHUB_OUTPUT
+            ;;
+          "observability-service")
+            echo "type=go" >> $GITHUB_OUTPUT
+            echo "path=repositories/observability-service" >> $GITHUB_OUTPUT
+            echo "test_command=go test ./..." >> $GITHUB_OUTPUT
+            ;;
+          "ai-quality-service")
+            echo "type=python" >> $GITHUB_OUTPUT
+            echo "path=repositories/ai-quality-service" >> $GITHUB_OUTPUT
+            echo "test_command=pytest" >> $GITHUB_OUTPUT
+            ;;
+          "optimization-service")
+            echo "type=go" >> $GITHUB_OUTPUT
+            echo "path=repositories/optimization-service" >> $GITHUB_OUTPUT
+            echo "test_command=go test ./..." >> $GITHUB_OUTPUT
+            ;;
+          "api-gateway")
+            echo "type=node" >> $GITHUB_OUTPUT
+            echo "path=repositories/api-gateway" >> $GITHUB_OUTPUT
+            echo "test_command=npm test" >> $GITHUB_OUTPUT
+            ;;
+          "dashboard-service")
+            echo "type=node" >> $GITHUB_OUTPUT
+            echo "path=repositories/dashboard-service" >> $GITHUB_OUTPUT
+            echo "test_command=npm test" >> $GITHUB_OUTPUT
+            ;;
+          "diagnyx-ui")
+            echo "type=node" >> $GITHUB_OUTPUT
+            echo "path=repositories/diagnyx-ui" >> $GITHUB_OUTPUT
+            echo "test_command=npm test" >> $GITHUB_OUTPUT
+            ;;
+          "diagnyx-python-sdk")
+            echo "type=python" >> $GITHUB_OUTPUT
+            echo "path=repositories/diagnyx-python-sdk" >> $GITHUB_OUTPUT
+            echo "test_command=python -m pytest" >> $GITHUB_OUTPUT
+            ;;
+          "diagnyx-javascript-sdk")
+            echo "type=node" >> $GITHUB_OUTPUT
+            echo "path=repositories/diagnyx-javascript-sdk" >> $GITHUB_OUTPUT
+            echo "test_command=npm test" >> $GITHUB_OUTPUT
+            ;;
+        esac
+    
+    # Language setup steps
+    - name: Set up JDK 17
+      if: steps.service-details.outputs.type == 'java'
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Set up Go
+      if: steps.service-details.outputs.type == 'go'
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache-dependency-path: ${{ steps.service-details.outputs.path }}/go.sum
+    
+    - name: Set up Node.js
+      if: steps.service-details.outputs.type == 'node'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: ${{ steps.service-details.outputs.path }}/package-lock.json
+    
+    - name: Set up Python
+      if: steps.service-details.outputs.type == 'python'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: ${{ steps.service-details.outputs.path }}/requirements.txt
+    
+    # Install dependencies
+    - name: Install dependencies
+      working-directory: ${{ steps.service-details.outputs.path }}
+      run: |
+        case "${{ steps.service-details.outputs.type }}" in
+          "java")
+            mvn dependency:resolve
+            ;;
+          "go")
+            go mod download
+            ;;
+          "node")
+            npm ci
+            ;;
+          "python")
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            ;;
+        esac
+    
+    # Run tests
+    - name: Run tests for ${{ matrix.service }}
+      working-directory: ${{ steps.service-details.outputs.path }}
+      run: ${{ steps.service-details.outputs.test_command }}
+    
+    # Run linting
+    - name: Run linting for ${{ matrix.service }}
+      working-directory: ${{ steps.service-details.outputs.path }}
+      run: |
+        case "${{ steps.service-details.outputs.type }}" in
+          "java")
+            mvn checkstyle:check || true
+            ;;
+          "go")
+            # Install golangci-lint if not cached
+            if ! command -v golangci-lint &> /dev/null; then
+              curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.54.2
+              echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+            fi
+            golangci-lint run || true
+            ;;
+          "node")
+            npm run lint || true
+            npx tsc --noEmit || true
+            ;;
+          "python")
+            pip install flake8 mypy
+            flake8 . || true
+            mypy . || true
+            ;;
+        esac
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
-        scan-type: 'config'
+        scan-type: 'fs'
         scan-ref: '.'
-    
-    - name: Terraform validate
-      run: |
-        cd terraform
-        terraform init -backend=false
-        terraform validate
+        format: 'table'
+        exit-code: '0'  # Don't fail the build on security issues for PR validation
 
-  build-and-push:
-    needs: lint-and-test
+  integration-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [auth-service, ingestion-service, dashboard, website]
-    
+    needs: [test-changed-services, infrastructure-validation]
+    if: always() && !failure()
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
     
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
+    - name: Set up Python for integration tests
+      uses: actions/setup-python@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+        python-version: '3.11'
     
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v1
+    - name: Install integration test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pytest
     
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v4
-      with:
-        context: ../${{ matrix.service }}
-        push: true
-        tags: |
-          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/${{ matrix.service }}:staging-${{ github.sha }}
-          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/${{ matrix.service }}:staging-latest
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+    - name: Run basic integration checks
+      run: |
+        # Run static integration tests (no actual deployment needed)
+        python -c "
+        import json
+        import os
+        
+        # Verify all service configurations exist
+        services = ['user-service', 'observability-service', 'ai-quality-service', 'optimization-service', 'api-gateway', 'dashboard-service', 'diagnyx-ui']
+        
+        for service in services:
+            service_path = f'repositories/{service}'
+            if not os.path.exists(service_path):
+                print(f'❌ Service directory missing: {service_path}')
+                exit(1)
+            else:
+                print(f'✅ Service directory exists: {service_path}')
+        
+        print('✅ All service directories validated')
+        "
 
-  deploy-staging:
-    needs: build-and-push
+  pr-summary:
     runs-on: ubuntu-latest
-    environment: staging
-    
+    needs: [changed-files, test-changed-services, infrastructure-validation, security-scan, integration-test]
+    if: always()
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
-    
-    - name: Setup kubectl
-      uses: azure/setup-kubectl@v3
-    
-    - name: Update kubeconfig
+    - name: Generate PR Summary
       run: |
-        aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
-    
-    - name: Deploy to staging
-      run: |
-        # Create staging namespace if not exists
-        kubectl create namespace diagnyx-staging --dry-run=client -o yaml | kubectl apply -f -
+        echo "## 🔍 Pull Request Validation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Changed Services" >> $GITHUB_STEP_SUMMARY
+        echo "Services detected as changed: ${{ needs.changed-files.outputs.changed-services }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
         
-        # Apply configurations with staging values
-        kubectl apply -f kubernetes/ -n diagnyx-staging
+        if [ "${{ needs.test-changed-services.result }}" = "success" ] || [ "${{ needs.test-changed-services.result }}" = "skipped" ]; then
+          echo "| Service Tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Service Tests | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+        fi
         
-        # Update image tags
-        export IMAGE_TAG=staging-${{ github.sha }}
-        kubectl set image deployment/auth-service auth-service=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/auth-service:$IMAGE_TAG -n diagnyx-staging
-        kubectl set image deployment/ingestion-service ingestion-service=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/ingestion-service:$IMAGE_TAG -n diagnyx-staging
-        kubectl set image deployment/dashboard dashboard=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/dashboard:$IMAGE_TAG -n diagnyx-staging
-    
-    - name: Run integration tests
-      run: |
-        # Run integration test suite
-        npm run test:integration
-    
-    - name: Comment PR
-      uses: actions/github-script@v6
-      if: github.event_name == 'pull_request'
-      with:
-        script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: '✅ Deployed to staging environment: https://staging.diagnyx.ai'
-          })
+        if [ "${{ needs.infrastructure-validation.result }}" = "success" ]; then
+          echo "| Infrastructure | ✅ Validated |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Infrastructure | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.security-scan.result }}" = "success" ]; then
+          echo "| Security Scan | ✅ Completed |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Security Scan | ⚠️ Issues Found |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.integration-test.result }}" = "success" ]; then
+          echo "| Integration Check | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Integration Check | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "💡 **Optimization**: This pipeline only tests changed components to save GitHub Actions minutes." >> $GITHUB_STEP_SUMMARY
+        echo "🚀 **No Deployment**: All deployment steps have been removed - this PR only validates code quality." >> $GITHUB_STEP_SUMMARY

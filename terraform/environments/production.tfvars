@@ -1,0 +1,51 @@
+# Production Environment Configuration
+# Optimized for reliability and performance with cost consciousness
+
+environment = "production"
+aws_region  = "us-east-1"
+
+# VPC Configuration - HA setup
+vpc_cidr            = "10.2.0.0/16"
+enable_nat_gateway  = true
+single_nat_gateway  = false  # Multiple NATs for HA
+
+# EKS Configuration - Production sizing
+eks_cluster_version         = "1.28"
+eks_node_group_desired_size = 3
+eks_node_group_min_size     = 2
+eks_node_group_max_size     = 10
+eks_node_instance_types     = ["t4g.large", "t4g.xlarge"]  # ARM-based for cost/performance
+eks_spot_instance_types     = ["t4g.large", "t4g.xlarge", "m6g.large", "m6g.xlarge"]
+
+# RDS Configuration - Production instance
+rds_instance_class           = "db.t4g.large"  # Good performance, reasonable cost
+rds_allocated_storage        = 100
+rds_max_allocated_storage    = 1000
+rds_backup_retention_period  = 30  # 30 days of backups
+rds_multi_az                 = true  # Multi-AZ for HA
+
+# ElastiCache Configuration - Production cluster
+elasticache_node_type        = "cache.t4g.medium"  # Good performance
+elasticache_num_cache_nodes  = 3  # Distributed cache
+
+# S3 Configuration
+enable_s3_versioning = true  # Version control for safety
+s3_lifecycle_days    = 90  # Standard lifecycle
+
+# Monitoring - Full retention
+enable_monitoring   = true
+log_retention_days  = 30  # 30 days retention
+
+# Cost Optimization - Conservative for production
+enable_spot_instances       = true
+spot_allocation_percentage  = 50  # 50/50 split for balance
+enable_scheduled_scaling    = false  # No scheduled scaling in production
+
+# Security
+enable_deletion_protection = true  # Protect critical resources
+
+# Production-specific settings
+owner_email = "ops@diagnyx.ai"
+allowed_cidr_blocks = [
+  "0.0.0.0/0"  # Update with actual IP ranges for security
+]

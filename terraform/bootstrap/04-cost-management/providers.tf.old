@@ -1,0 +1,73 @@
+# Provider Configuration for Cost Management - us-east-1 only
+
+terraform {
+  required_version = ">= 1.5.0"
+  
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+  
+  backend "s3" {
+    # Backend config will be provided via -backend-config
+    # But defaults to us-east-1
+  }
+}
+
+provider "aws" {
+  region = "us-east-1"  # All resources in us-east-1
+  
+  # Assume role if provided
+  dynamic "assume_role" {
+    for_each = var.assume_role_arn != "" ? [1] : []
+    content {
+      role_arn     = var.assume_role_arn
+      session_name = "terraform-cost-management"
+      external_id  = var.external_id
+    }
+  }
+  
+  default_tags {
+    tags = {
+      Project     = "Diagnyx"
+      Environment = var.environment
+      Component   = "CostManagement"
+      ManagedBy   = "Terraform"
+      Region      = "us-east-1"
+      AlertEmail  = var.budget_alert_email
+    }
+  }
+}
+
+# Additional variables
+variable "assume_role_arn" {
+  description = "IAM role to assume for deployment"
+  type        = string
+  default     = ""
+}
+
+variable "external_id" {
+  description = "External ID for role assumption"
+  type        = string
+  default     = "diagnyx-cost-2024"
+}
+
+# Data sources
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
+# Ensure we're in us-east-1 (required for billing metrics)
+resource "null_resource" "region_check" {
+  triggers = {
+    region = data.aws_region.current.name
+  }
+  
+  lifecycle {
+    precondition {
+      condition     = data.aws_region.current.name == "us-east-1"
+      error_message = "Cost management must be deployed in us-east-1 region (required for billing metrics)."
+    }
+  }
+}

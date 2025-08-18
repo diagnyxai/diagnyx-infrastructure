@@ -1,0 +1,31 @@
+# Variables for Cost Management
+
+variable "budget_alert_email" {
+  description = "Email address for budget alerts"
+  type        = string
+  default     = "admin@diagnyx.com"
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "master"
+}
+
+variable "account_ids" {
+  description = "Map of account IDs"
+  type        = map(string)
+  default     = {}
+}
+
+variable "budget_limits" {
+  description = "Budget limits per environment"
+  type        = map(number)
+  default     = {
+    development = 25
+    staging     = 25
+    uat         = 25
+    production  = 50
+    shared      = 25
+  }
+}

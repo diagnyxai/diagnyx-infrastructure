@@ -1,0 +1,273 @@
+# Automated Spending Controls - Hard Limits with Automatic Actions
+# Cost: FREE (Lambda execution within free tier)
+# Purpose: Automatically stop/reduce resources when spending limits are reached
+
+# Lambda function for automated cost control actions
+resource "aws_lambda_function" "cost_controller" {
+  filename         = "${path.module}/lambda/cost-controller.zip"
+  function_name    = "diagnyx-${var.environment}-cost-controller"
+  role            = aws_iam_role.cost_controller.arn
+  handler         = "index.handler"
+  source_code_hash = filebase64sha256("${path.module}/lambda/cost-controller.zip")
+  runtime         = "python3.11"
+  timeout         = 60
+  memory_size     = 256
+
+  environment {
+    variables = {
+      ENVIRONMENT = var.environment
+      MAX_BUDGET  = local.budget_configs[var.environment].monthly_limit
+      ACTIONS     = jsonencode(local.cost_control_actions[var.environment])
+    }
+  }
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "diagnyx-${var.environment}-cost-controller"
+    }
+  )
+}
+
+# IAM role for cost controller Lambda
+resource "aws_iam_role" "cost_controller" {
+  name = "diagnyx-${var.environment}-cost-controller-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# IAM policy for cost controller actions
+resource "aws_iam_role_policy" "cost_controller" {
+  name = "cost-controller-policy"
+  role = aws_iam_role.cost_controller.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ce:GetCostAndUsage",
+          "ce:GetCostForecast",
+          "budgets:DescribeBudget"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:UpdateService",
+          "ecs:StopTask",
+          "ecs:ListServices",
+          "ecs:ListTasks"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "ecs:cluster" = "arn:aws:ecs:*:*:cluster/diagnyx-${var.environment}"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "autoscaling:UpdateAutoScalingGroup",
+          "autoscaling:SetDesiredCapacity"
+        ]
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "autoscaling:ResourceTag/Environment" = var.environment
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds:StopDBInstance",
+          "rds:StopDBCluster"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "rds:DatabaseEngine" = ["postgres", "mysql"]
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:Publish"
+        ]
+        Resource = aws_sns_topic.cost_alerts.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cost_controller_basic" {
+  role       = aws_iam_role.cost_controller.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# EventBridge rules for automated budget actions
+locals {
+  # Define actions based on budget percentage
+  cost_control_actions = {
+    development = {
+      "80" = ["alert"]                           # Just alert at 80%
+      "100" = ["scale_down", "alert"]           # Scale down at 100%
+      "120" = ["stop_non_essential", "alert"]   # Stop services at 120%
+    }
+    staging = {
+      "80" = ["alert"]
+      "100" = ["scale_down", "alert"]
+      "120" = ["stop_non_essential", "alert"]
+    }
+    uat = {
+      "80" = ["alert"]
+      "100" = ["scale_down", "alert"]
+      "120" = ["stop_non_essential", "alert"]
+    }
+    production = {
+      "80" = ["alert"]
+      "90" = ["alert", "scale_down_non_critical"]
+      "100" = ["alert", "emergency_scale_down"]
+      "110" = ["alert", "stop_batch_jobs"]
+      "120" = ["page_oncall", "critical_only_mode"]
+    }
+    shared = {
+      "80" = ["alert"]
+      "100" = ["alert", "review_required"]
+    }
+  }
+}
+
+# EventBridge rule triggered by budget notifications
+resource "aws_cloudwatch_event_rule" "budget_exceeded" {
+  name        = "diagnyx-${var.environment}-budget-exceeded"
+  description = "Trigger cost control actions when budget is exceeded"
+
+  event_pattern = jsonencode({
+    source      = ["aws.budgets"]
+    detail-type = ["AWS Budgets Notification"]
+    detail = {
+      budgetName = [aws_budgets_budget.monthly.name]
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "cost_controller" {
+  rule      = aws_cloudwatch_event_rule.budget_exceeded.name
+  target_id = "CostControllerLambda"
+  arn       = aws_lambda_function.cost_controller.arn
+}
+
+resource "aws_lambda_permission" "allow_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cost_controller.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.budget_exceeded.arn
+}
+
+# SNS Topic for cost alerts
+resource "aws_sns_topic" "cost_alerts" {
+  name = "diagnyx-${var.environment}-cost-alerts"
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "Cost Alerts"
+    }
+  )
+}
+
+resource "aws_sns_topic_subscription" "cost_alerts_email" {
+  topic_arn = aws_sns_topic.cost_alerts.arn
+  protocol  = "email"
+  endpoint  = var.budget_alert_email
+}
+
+# Optional: SMS alerts for critical budgets
+resource "aws_sns_topic_subscription" "cost_alerts_sms" {
+  count = var.environment == "production" ? 1 : 0
+
+  topic_arn = aws_sns_topic.cost_alerts.arn
+  protocol  = "sms"
+  endpoint  = var.oncall_phone_number
+}
+
+# CloudWatch Alarm for immediate action
+resource "aws_cloudwatch_metric_alarm" "spending_alarm" {
+  alarm_name          = "diagnyx-${var.environment}-spending-critical"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "EstimatedCharges"
+  namespace           = "AWS/Billing"
+  period              = "86400"  # Daily
+  statistic           = "Maximum"
+  threshold           = local.budget_configs[var.environment].monthly_limit
+  alarm_description   = "Alert when spending exceeds monthly budget"
+  alarm_actions       = [aws_sns_topic.cost_alerts.arn]
+
+  dimensions = {
+    Currency = "USD"
+  }
+}
+
+# Scheduled Lambda to check spending daily
+resource "aws_cloudwatch_event_rule" "daily_cost_check" {
+  name                = "diagnyx-${var.environment}-daily-cost-check"
+  description         = "Daily check of AWS spending"
+  schedule_expression = "cron(0 12 * * ? *)"  # Daily at noon UTC
+}
+
+resource "aws_cloudwatch_event_target" "daily_cost_check" {
+  rule      = aws_cloudwatch_event_rule.daily_cost_check.name
+  target_id = "CostControllerLambda"
+  arn       = aws_lambda_function.cost_controller.arn
+
+  input = jsonencode({
+    action = "daily_check"
+  })
+}
+
+resource "aws_lambda_permission" "allow_daily_check" {
+  statement_id  = "AllowExecutionFromDailyCheck"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cost_controller.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.daily_cost_check.arn
+}
+
+# Outputs
+output "cost_controller_function_arn" {
+  value       = aws_lambda_function.cost_controller.arn
+  description = "ARN of the cost controller Lambda function"
+}
+
+output "cost_alerts_topic_arn" {
+  value       = aws_sns_topic.cost_alerts.arn
+  description = "ARN of the cost alerts SNS topic"
+}

@@ -1,0 +1,94 @@
+{
+  "account_ids": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "dev": "string",
+        "master": "string",
+        "production": "string",
+        "shared": "string",
+        "staging": "string",
+        "uat": "string"
+      }
+    ],
+    "value": {
+      "dev": "215726089610",
+      "master": "778715730121",
+      "production": "921205606542",
+      "shared": "008341391284",
+      "staging": "435455014599",
+      "uat": "318265006643"
+    }
+  },
+  "dev_account_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "215726089610"
+  },
+  "master_account_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "778715730121"
+  },
+  "organization_arn": {
+    "sensitive": false,
+    "type": "string",
+    "value": "arn:aws:organizations::778715730121:organization/o-f4iy5gqnn4"
+  },
+  "organization_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "o-f4iy5gqnn4"
+  },
+  "organizational_units": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "non_production": "string",
+        "production": "string",
+        "shared": "string"
+      }
+    ],
+    "value": {
+      "non_production": "ou-cjqc-aaplt8s8",
+      "production": "ou-cjqc-dbrfb7uz",
+      "shared": "ou-cjqc-9cadn3zr"
+    }
+  },
+  "prod_account_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "921205606542"
+  },
+  "service_control_policies": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "cost_control": "string",
+        "region_restriction": "string"
+      }
+    ],
+    "value": {
+      "cost_control": "p-ngdjln69",
+      "region_restriction": "p-bvr4d8un"
+    }
+  },
+  "shared_services_account_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "008341391284"
+  },
+  "staging_account_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "435455014599"
+  },
+  "uat_account_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "318265006643"
+  }
+}
