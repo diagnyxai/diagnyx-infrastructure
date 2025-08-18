@@ -1,225 +1,131 @@
-version: '3.8'
+name: diagnyx-services
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: diagnyx-postgres
-    environment:
-      POSTGRES_DB: diagnyx
-      POSTGRES_USER: diagnyx
-      POSTGRES_PASSWORD: diagnyx123
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-scripts:/docker-entrypoint-initdb.d
-    networks:
-      - diagnyx-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U diagnyx"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # Note: PostgreSQL and Redis are now provided by shared infrastructure containers:
+  # - database-postgres on localhost:5433
+  # - cache-redis on localhost:6380
 
-  # Redis Cache
-  redis:
-    image: redis:7-alpine
-    container_name: diagnyx-redis
-    command: redis-server --appendonly yes
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - diagnyx-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # Note: Kafka, Zookeeper, and Elasticsearch are now provided by shared infrastructure:
+  # - messaging-kafka on localhost:9093
+  # - messaging-zookeeper on localhost:2182 
+  # - search-elasticsearch on localhost:9201
 
-  # Kafka
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: diagnyx-zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
-    networks:
-      - diagnyx-network
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: diagnyx-kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-    networks:
-      - diagnyx-network
-    healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-
-  # Elasticsearch for search
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: diagnyx-elasticsearch
-    environment:
-      - discovery.type=single-node
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - xpack.security.enabled=false
-    ports:
-      - "9200:9200"
-    volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
-    networks:
-      - diagnyx-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # Auth Service
-  auth-service:
+  # User Service
+  user-service:
     build:
-      context: ../../diagnyx-auth
+      context: ../../user-service
       dockerfile: Dockerfile
-    container_name: diagnyx-auth
+    container_name: diagnyx-user-service
     ports:
-      - "3001:3001"
+      - "8001:8001"
     environment:
-      PORT: 3001
-      NODE_ENV: development
-      DATABASE_URL: postgres://diagnyx:diagnyx123@postgres:5432/diagnyx_auth
-      REDIS_URL: redis://redis:6379
+      SPRING_PROFILES_ACTIVE: development
+      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
+      REDIS_URL: redis://cache-redis:6379
       JWT_SECRET: dev-jwt-secret
-      JWT_REFRESH_SECRET: dev-refresh-secret
-      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
-      - diagnyx-network
+      - diagnyx-workspace
+      - shared-infra-services
 
-  # Ingestion Service
-  ingestion-service:
+  # AI Quality Service
+  ai-quality-service:
     build:
-      context: ../../diagnyx-ingestion
+      context: ../../ai-quality-service
       dockerfile: Dockerfile
-    container_name: diagnyx-ingestion
+    container_name: diagnyx-ai-quality
+    ports:
+      - "8002:8002"
+    environment:
+      PORT: 8002
+      ENVIRONMENT: development
+      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
+      REDIS_URL: redis://cache-redis:6379
+    networks:
+      - diagnyx-workspace
+      - shared-infra-services
+
+  # Observability Service (Go)
+  observability-service:
+    build:
+      context: ../../observability-service
+      dockerfile: Dockerfile
+    container_name: diagnyx-observability
     ports:
       - "8080:8080"
     environment:
       PORT: 8080
       ENVIRONMENT: development
-      DATABASE_URL: postgres://diagnyx:diagnyx123@postgres:5432/diagnyx_traces
-      REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: kafka:29092
-      KAFKA_TOPIC: llm-traces
-      OTLP_ENDPOINT: otel-collector:4317
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
+      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
+      REDIS_URL: redis://cache-redis:6379
+      KAFKA_BROKER_URL: messaging-kafka:29092
+      ELASTICSEARCH_URL: http://search-elasticsearch:9200
     networks:
-      - diagnyx-network
+      - diagnyx-workspace
+      - shared-infra-services
 
-  # Dashboard
-  dashboard:
+  # Optimization Service (Go)
+  optimization-service:
     build:
-      context: ../../diagnyx-dashboard
+      context: ../../optimization-service
       dockerfile: Dockerfile
-    container_name: diagnyx-dashboard
+    container_name: diagnyx-optimization
+    ports:
+      - "8003:8003"
+    environment:
+      PORT: 8003
+      ENVIRONMENT: development
+      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
+      REDIS_URL: redis://cache-redis:6379
+    networks:
+      - diagnyx-workspace
+      - shared-infra-services
+
+  # API Gateway (Node.js/Express)
+  api-gateway:
+    build:
+      context: ../../diagnyx-api-gateway
+      dockerfile: Dockerfile
+    container_name: diagnyx-api-gateway
+    ports:
+      - "8000:8080"
+    environment:
+      PORT: 8080
+      ENVIRONMENT: development
+      USER_SERVICE_URL: http://diagnyx-user-service:8001
+      OBSERVABILITY_SERVICE_URL: http://diagnyx-observability:8080
+      AI_QUALITY_SERVICE_URL: http://diagnyx-ai-quality:8002
+      OPTIMIZATION_SERVICE_URL: http://diagnyx-optimization:8003
+      REDIS_URL: redis://cache-redis:6379
+    networks:
+      - diagnyx-workspace
+      - shared-infra-services
+
+  # Diagnyx UI (Unified Website and Dashboard)
+  diagnyx-ui:
+    build:
+      context: ../../diagnyx-ui
+      dockerfile: Dockerfile
+    container_name: diagnyx-ui
     ports:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8080
       NEXT_PUBLIC_AUTH_URL: http://localhost:3001
       NEXT_PUBLIC_ENVIRONMENT: development
-    depends_on:
-      - auth-service
-      - ingestion-service
     networks:
-      - diagnyx-network
+      - diagnyx-workspace
+      - shared-infra-services
 
-  # Prometheus
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: diagnyx-prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    ports:
-      - "9090:9090"
-    networks:
-      - diagnyx-network
+  # Note: Monitoring infrastructure is now provided by shared containers:
+  # - monitoring-prometheus on localhost:9091
+  # - monitoring-grafana on localhost:3006
+  # - observability-otel on localhost:4319 (gRPC), 4320 (HTTP), 8889 (metrics)
 
-  # Grafana
-  grafana:
-    image: grafana/grafana:latest
-    container_name: diagnyx-grafana
-    ports:
-      - "3005:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=redis-datasource
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-    depends_on:
-      - prometheus
-    networks:
-      - diagnyx-network
-
-  # OpenTelemetry Collector
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    container_name: diagnyx-otel
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
-    ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
-      - "8888:8888"   # Prometheus metrics
-    networks:
-      - diagnyx-network
-
-volumes:
-  postgres_data:
-  redis_data:
-  elasticsearch_data:
-  prometheus_data:
-  grafana_data:
-  kafka_data:
+volumes: {}
 
 networks:
-  diagnyx-network:
+  diagnyx-workspace:
+    name: diagnyx-services
     driver: bridge
+  shared-infra-services:
+    external: true
