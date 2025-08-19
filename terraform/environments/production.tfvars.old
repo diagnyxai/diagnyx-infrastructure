@@ -47,3 +47,23 @@ owner_email = "ops@diagnyx.ai"
 allowed_cidr_blocks = [
   "0.0.0.0/0"  # Update with actual IP ranges for security
 ]
+
+# Authentication Configuration
+cognito_user_pool_name = "diagnyx-production-user-pool"
+cognito_client_name    = "diagnyx-production-client"
+ses_domain            = "diagnyx.ai"
+from_email            = "noreply@diagnyx.ai"
+api_gateway_endpoint  = "https://api.diagnyx.ai"
+
+# Password Policy - Strict for production
+password_policy = {
+  minimum_length    = 12
+  require_lowercase = true
+  require_numbers   = true
+  require_symbols   = true
+  require_uppercase = true
+}
+
+# Database Configuration
+database_name = "diagnyx_users"
+database_master_username = "postgres"

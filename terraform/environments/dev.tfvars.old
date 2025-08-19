@@ -56,3 +56,23 @@ scale_up_schedule          = "0 11 * * MON-FRI"  # 11 AM UTC (6 AM EST)
 
 # Security
 enable_deletion_protection = false  # Allow easy cleanup in dev
+
+# Authentication Configuration
+cognito_user_pool_name = "diagnyx-development-user-pool"
+cognito_client_name    = "diagnyx-development-client"
+ses_domain            = "dev.diagnyx.ai"
+from_email            = "noreply@dev.diagnyx.ai"
+api_gateway_endpoint  = "https://api-dev.diagnyx.ai"
+
+# Password Policy
+password_policy = {
+  minimum_length    = 6  # Relaxed for development
+  require_lowercase = true
+  require_numbers   = true
+  require_symbols   = false  # Relaxed for development
+  require_uppercase = true
+}
+
+# Database Configuration
+database_name = "diagnyx_users_dev"
+database_master_username = "postgres"

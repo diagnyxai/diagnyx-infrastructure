@@ -43,3 +43,23 @@ scale_up_schedule          = "0 10 * * MON-FRI"  # 10 AM UTC (5 AM EST)
 
 # Security
 enable_deletion_protection = false  # Allow cleanup after testing
+
+# Authentication Configuration
+cognito_user_pool_name = "diagnyx-staging-user-pool"
+cognito_client_name    = "diagnyx-staging-client"
+ses_domain            = "staging.diagnyx.ai"
+from_email            = "noreply@staging.diagnyx.ai"
+api_gateway_endpoint  = "https://api-staging.diagnyx.ai"
+
+# Password Policy - Production-like but slightly relaxed
+password_policy = {
+  minimum_length    = 8
+  require_lowercase = true
+  require_numbers   = true
+  require_symbols   = true
+  require_uppercase = true
+}
+
+# Database Configuration
+database_name = "diagnyx_users_staging"
+database_master_username = "postgres"
