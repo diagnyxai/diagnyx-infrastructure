@@ -68,6 +68,23 @@ resource "aws_iam_access_key" "backup_user_key" {
   user = aws_iam_user.backup_user.name
 }
 
+# Terraform Deployer User
+resource "aws_iam_user" "terraform_deployer_user" {
+  name = "${local.name_prefix}-terraform-deployer"
+  path = "/service-accounts/"
+
+  tags = merge(var.common_tags, {
+    Name        = "${local.name_prefix}-terraform-deployer"
+    Type        = "ServiceAccount"
+    Purpose     = "Terraform Infrastructure Deployment"
+    Environment = var.environment
+  })
+}
+
+resource "aws_iam_access_key" "terraform_deployer_user_key" {
+  user = aws_iam_user.terraform_deployer_user.name
+}
+
 # Hybrid Secrets Management Strategy
 # CI/CD credentials will be manually added to GitHub Secrets
 # Operational credentials will be stored in local secure file (not in Terraform state)

@@ -1,0 +1,12 @@
+{
+  "name": "pre-token-generation-trigger",
+  "version": "1.0.0",
+  "description": "Cognito pre-token generation Lambda trigger",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["cognito", "lambda", "pre-token-generation"],
+  "author": "Diagnyx",
+  "license": "MIT"
+}

@@ -101,9 +101,9 @@ resource "aws_cognito_user_pool" "main" {
 
   # Verification Messages
   verification_message_template {
-    default_email_option = "CONFIRM_WITH_LINK"
+    default_email_option = "CONFIRM_WITH_CODE"
     email_subject         = "Verify your Diagnyx account"
-    email_message         = "Please click the link below to verify your email address: {##Verify Email##}"
+    email_message         = "Please enter this verification code to verify your email: {####}"
   }
 
   # Admin Create User Config
@@ -112,7 +112,8 @@ resource "aws_cognito_user_pool" "main" {
     
     invite_message_template {
       email_subject = "Welcome to Diagnyx - Complete your account setup"
-      email_message = "You have been invited to join Diagnyx. Your temporary password is {####}. Please log in and change your password."
+      email_message = "You have been invited to join Diagnyx. Username: {username}. Your temporary password is {####}. Please log in and change your password."
+      sms_message   = "Welcome to Diagnyx! Username: {username}. Your temporary password is {####}. Please log in and change your password."
     }
   }
 
@@ -193,11 +194,8 @@ resource "aws_cognito_user_pool_client" "main" {
     "ALLOW_REFRESH_TOKEN_AUTH",
     "ALLOW_USER_SRP_AUTH"
   ]
-
-  tags = merge(var.common_tags, {
-    Name = local.client_name
-    Type = "Authentication"
-  })
+  
+  # Note: Cognito user pool client does not support tags
 }
 
 # Cognito User Pool Domain

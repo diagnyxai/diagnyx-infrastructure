@@ -1,29 +1,17 @@
-# SES Configuration for Email Services
+# SES Configuration for Email Services (Local Development)
+# Using individual email verification instead of domain verification
+# since domain is managed by Cloudflare
 
-# SES Domain Identity
-resource "aws_ses_domain_identity" "main" {
-  domain = var.ses_domain
-
-  tags = merge(var.common_tags, {
-    Name = "${local.name_prefix}-ses-domain"
-    Type = "SES"
-  })
-}
-
-# SES Domain DKIM
-resource "aws_ses_domain_dkim" "main" {
-  domain = aws_ses_domain_identity.main.domain
-}
-
-# SES Email Identity (for from address)
+# SES Email Identity (for from address) - MAIN IDENTITY
 resource "aws_ses_email_identity" "from_email" {
   email = var.from_email
-
-  tags = merge(var.common_tags, {
-    Name = "${local.name_prefix}-ses-email"
-    Type = "SES"
-  })
+  
+  # Note: SES email identity does not support tags
 }
+
+# Note: Domain identity disabled for local development
+# In production, you would verify the domain through SES
+# For now, we rely on individual email verification
 
 # SES Configuration Set
 resource "aws_ses_configuration_set" "main" {
@@ -33,11 +21,8 @@ resource "aws_ses_configuration_set" "main" {
   delivery_options {
     tls_policy = "Require"
   }
-
-  tags = merge(var.common_tags, {
-    Name = "${local.name_prefix}-ses-config-set"
-    Type = "SES"
-  })
+  
+  # Note: SES configuration set does not support tags in some regions
 }
 
 # SES Event Destination for bounces and complaints
@@ -50,16 +35,15 @@ resource "aws_ses_event_destination" "cloudwatch" {
   cloudwatch_destination {
     default_value  = "0"
     dimension_name = "EmailAddress"
-    value_source   = "emailAddress"
+    value_source   = "messageTag"
   }
 }
 
-# SES Receipt Rule Set (for handling bounces if needed)
-resource "aws_ses_receipt_rule_set" "main" {
-  rule_set_name = "${local.name_prefix}-receipt-rules"
-
-  depends_on = [aws_ses_domain_identity.main]
-}
+# SES Receipt Rule Set (disabled for email-only verification)
+# resource "aws_ses_receipt_rule_set" "main" {
+#   rule_set_name = "${local.name_prefix}-receipt-rules"
+#   depends_on = [aws_ses_email_identity.from_email]
+# }
 
 # CloudWatch Log Group for SES events
 resource "aws_cloudwatch_log_group" "ses_logs" {
@@ -82,11 +66,8 @@ resource "aws_ses_template" "welcome_email" {
   text = templatefile("${path.module}/email-templates/welcome.txt", {
     app_url = var.environment == "production" ? "https://app.diagnyx.ai" : "http://localhost:3002"
   })
-
-  tags = merge(var.common_tags, {
-    Name = "${local.name_prefix}-welcome-template"
-    Type = "SESTemplate"
-  })
+  
+  # Note: SES templates do not support tags
 }
 
 resource "aws_ses_template" "verification_email" {
@@ -98,11 +79,8 @@ resource "aws_ses_template" "verification_email" {
   text = templatefile("${path.module}/email-templates/verification.txt", {
     app_url = var.environment == "production" ? "https://app.diagnyx.ai" : "http://localhost:3002"
   })
-
-  tags = merge(var.common_tags, {
-    Name = "${local.name_prefix}-verification-template"
-    Type = "SESTemplate"
-  })
+  
+  # Note: SES templates do not support tags
 }
 
 resource "aws_ses_template" "password_reset" {
@@ -114,16 +92,13 @@ resource "aws_ses_template" "password_reset" {
   text = templatefile("${path.module}/email-templates/password-reset.txt", {
     app_url = var.environment == "production" ? "https://app.diagnyx.ai" : "http://localhost:3002"
   })
-
-  tags = merge(var.common_tags, {
-    Name = "${local.name_prefix}-password-reset-template"
-    Type = "SESTemplate"
-  })
+  
+  # Note: SES templates do not support tags
 }
 
 # SES Identity Policy to allow sending from Cognito and Lambda
 resource "aws_ses_identity_policy" "cognito_sending_policy" {
-  identity = aws_ses_domain_identity.main.arn
+  identity = aws_ses_email_identity.from_email.arn
   name     = "${local.name_prefix}-cognito-sending-policy"
 
   policy = jsonencode({
@@ -142,8 +117,14 @@ resource "aws_ses_identity_policy" "cognito_sending_policy" {
           "ses:SendEmail",
           "ses:SendRawEmail"
         ]
-        Resource = aws_ses_domain_identity.main.arn
+        Resource = aws_ses_email_identity.from_email.arn
       }
     ]
   })
+
+  depends_on = [
+    aws_iam_role.ses_sending_role,
+    aws_iam_role.lambda_execution_role,
+    aws_iam_role.microservice_role
+  ]
 }

@@ -284,6 +284,70 @@ resource "aws_iam_policy" "backup_policy" {
   })
 }
 
+# Terraform Deployer User Policy
+resource "aws_iam_policy" "terraform_deployer_policy" {
+  name        = "${local.name_prefix}-terraform-deployer-policy"
+  description = "Policy for Terraform deployer user (infrastructure management)"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:*",
+          "lambda:*",
+          "cognito-idp:*",
+          "ses:*",
+          "secretsmanager:*",
+          "cloudwatch:*",
+          "logs:*",
+          "ecr:*"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestedRegion" = var.aws_region
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::diagnyx-terraform-state-*/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = [
+          "arn:aws:dynamodb:${var.aws_region}:*:table/diagnyx-terraform-locks-*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sts:GetCallerIdentity"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = merge(var.common_tags, {
+    Name = "${local.name_prefix}-terraform-deployer-policy"
+    Type = "IAMPolicy"
+  })
+}
+
 # Attach policies to users
 resource "aws_iam_user_policy_attachment" "ci_cd_user_policy" {
   user       = aws_iam_user.ci_cd_user.name
@@ -303,4 +367,9 @@ resource "aws_iam_user_policy_attachment" "monitoring_user_policy" {
 resource "aws_iam_user_policy_attachment" "backup_user_policy" {
   user       = aws_iam_user.backup_user.name
   policy_arn = aws_iam_policy.backup_policy.arn
+}
+
+resource "aws_iam_user_policy_attachment" "terraform_deployer_user_policy" {
+  user       = aws_iam_user.terraform_deployer_user.name
+  policy_arn = aws_iam_policy.terraform_deployer_policy.arn
 }
