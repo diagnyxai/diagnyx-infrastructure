@@ -2,30 +2,50 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-rule_files:
-  # - "first_rules.yml"
-  # - "second_rules.yml"
-
 scrape_configs:
+  # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'diagnyx-services'
+  # User Service (Java/Spring Boot with Actuator)
+  - job_name: 'user-service'
     static_configs:
-      - targets: 
-          - 'diagnyx-ui:3000'
-          - 'diagnyx-user-service:8001'
-          - 'diagnyx-ai-quality:8002'
+      - targets: ['diagnyx-user-service:8080']
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 30s
 
-  - job_name: 'infrastructure'
+  # API Gateway (Node.js with prometheus middleware)
+  - job_name: 'api-gateway'
     static_configs:
-      - targets:
-          - 'postgres:5432'
-          - 'redis:6379'
-          - 'elasticsearch:9200'
-          - 'kafka:9092'
+      - targets: ['diagnyx-api-gateway:8443']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
 
-  - job_name: 'otel-collector'
+  # UI Service (Next.js with basic metrics)
+  - job_name: 'ui-service'
     static_configs:
-      - targets: ['otel-collector:8888']
+      - targets: ['diagnyx-ui:3000']
+    metrics_path: '/api/metrics'
+    scrape_interval: 60s
+
+  # PostgreSQL Database (basic connection monitoring)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['diagnyx-postgres:5432']
+    scrape_interval: 60s
+    metrics_path: '/'
+    scrape_timeout: 10s
+
+# Note: Simplified architecture - removed scrape configs for:
+# - observability-service (deleted)
+# - ai-quality-service (deleted)  
+# - optimization-service (deleted)
+# - dashboard-service (deleted)
+# - redis (removed)
+# - elasticsearch (removed)
+# - kafka (removed)
+# - otel-collector (removed)

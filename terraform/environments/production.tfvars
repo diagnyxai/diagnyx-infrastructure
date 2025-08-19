@@ -24,9 +24,7 @@ rds_max_allocated_storage    = 1000
 rds_backup_retention_period  = 30  # 30 days of backups
 rds_multi_az                 = true  # Multi-AZ for HA
 
-# ElastiCache Configuration - Production cluster
-elasticache_node_type        = "cache.t4g.medium"  # Good performance
-elasticache_num_cache_nodes  = 3  # Distributed cache
+# ElastiCache removed - using in-memory caching
 
 # S3 Configuration
 enable_s3_versioning = true  # Version control for safety

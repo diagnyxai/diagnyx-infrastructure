@@ -22,7 +22,7 @@ spec:
     - "*.diagnyx.ai"
     secretName: diagnyx-tls
   rules:
-  # Main website
+  # Main website / Marketing site
   - host: diagnyx.ai
     http:
       paths:
@@ -30,10 +30,10 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: website
+            name: ui-service
             port:
               number: 3000
-  # Dashboard
+  # Application (same as marketing in simplified architecture)
   - host: app.diagnyx.ai
     http:
       paths:
@@ -41,7 +41,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: dashboard
+            name: ui-service
             port:
               number: 3000
   # API Gateway
@@ -54,29 +54,7 @@ spec:
           service:
             name: api-gateway
             port:
-              number: 8080
-  # Auth Service
-  - host: auth.diagnyx.ai
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: auth-service
-            port:
-              number: 3001
-  # Ingestion Service
-  - host: ingest.diagnyx.ai
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: ingestion-service
-            port:
-              number: 8080
+              number: 8443
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -92,3 +70,8 @@ spec:
     - http01:
         ingress:
           class: nginx
+
+# Note: Simplified architecture - removed ingress rules for:
+# - auth.diagnyx.ai (auth merged into user-service via API gateway)
+# - ingest.diagnyx.ai (ingestion service removed)
+# - dashboard service (removed, functionality in UI service)

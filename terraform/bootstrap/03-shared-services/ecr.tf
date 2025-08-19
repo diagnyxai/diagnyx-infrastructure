@@ -3,14 +3,10 @@
 # Purpose: Centralized container image storage shared across all environments
 
 locals {
-  # List of services that need ECR repositories
+  # List of services that need ECR repositories (simplified)
   ecr_repositories = [
     "user-service",
-    "observability-service",
-    "ai-quality-service",
-    "optimization-service",
-    "api-gateway",
-    "dashboard-service",
+    "diagnyx-api-gateway",
     "diagnyx-ui"
   ]
   
