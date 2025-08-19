@@ -116,8 +116,17 @@ resource "aws_ce_anomaly_monitor" "main" {
 
 resource "aws_ce_anomaly_subscription" "main" {
   name      = "${local.name_prefix}-anomaly-subscription"
-  threshold = 100  # Alert on anomalies over $100
   frequency = "DAILY"
+  
+  threshold_expression {
+    and {
+      dimension {
+        key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
+        values        = ["100"]
+        match_options = ["GREATER_THAN_OR_EQUAL"]
+      }
+    }
+  }
   
   monitor_arn_list = [aws_ce_anomaly_monitor.main.arn]
   

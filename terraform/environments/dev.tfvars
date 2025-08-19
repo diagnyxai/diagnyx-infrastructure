@@ -37,9 +37,7 @@ rds_max_allocated_storage    = 100
 rds_backup_retention_period  = 1  # Minimal backups for dev
 rds_multi_az                 = false  # Single AZ for dev
 
-# ElastiCache Configuration - Minimal setup
-elasticache_node_type        = "cache.t4g.micro"  # $13/month
-elasticache_num_cache_nodes  = 1  # Single node for dev
+# ElastiCache removed - using in-memory caching
 
 # S3 Configuration
 enable_s3_versioning = false  # No versioning in dev

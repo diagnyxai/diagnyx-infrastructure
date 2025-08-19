@@ -69,7 +69,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 resource "aws_security_group" "alb" {
   name        = "${local.ecs_name}-alb"
   description = "Security group for Application Load Balancer"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
     description = "HTTP from Internet"
@@ -144,7 +144,7 @@ resource "aws_lb_listener" "api" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.api_gateway.arn
+    target_group_arn = aws_lb_target_group.diagnyx_api_gateway.arn
   }
 }
 
@@ -155,7 +155,7 @@ resource "aws_lb_target_group" "user_service" {
   name                 = "${local.ecs_name}-user-service"
   port                 = 8001
   protocol             = "HTTP"
-  vpc_id               = aws_vpc.main.id
+  vpc_id               = module.vpc.vpc_id
   target_type          = "ip"
   deregistration_delay = 30
 
@@ -183,93 +183,12 @@ resource "aws_lb_target_group" "user_service" {
   )
 }
 
-# 2. Observability Service Target Group
-resource "aws_lb_target_group" "observability_service" {
-  name                 = "${local.ecs_name}-observability"
-  port                 = 8080
-  protocol             = "HTTP"
-  vpc_id               = aws_vpc.main.id
-  target_type          = "ip"
-  deregistration_delay = 30
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
-    interval            = 30
-    path                = "/health"
-    matcher             = "200"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${local.ecs_name}-observability"
-    }
-  )
-}
-
-# 3. AI Quality Service Target Group
-resource "aws_lb_target_group" "ai_quality_service" {
-  name                 = "${local.ecs_name}-ai-quality"
-  port                 = 8002
-  protocol             = "HTTP"
-  vpc_id               = aws_vpc.main.id
-  target_type          = "ip"
-  deregistration_delay = 30
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
-    interval            = 30
-    path                = "/health"
-    matcher             = "200"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${local.ecs_name}-ai-quality"
-    }
-  )
-}
-
-# 4. Optimization Service Target Group
-resource "aws_lb_target_group" "optimization_service" {
-  name                 = "${local.ecs_name}-optimization"
-  port                 = 8003
-  protocol             = "HTTP"
-  vpc_id               = aws_vpc.main.id
-  target_type          = "ip"
-  deregistration_delay = 30
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
-    interval            = 30
-    path                = "/health"
-    matcher             = "200"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${local.ecs_name}-optimization"
-    }
-  )
-}
-
-# 5. API Gateway Target Group
-resource "aws_lb_target_group" "api_gateway" {
+# 2. API Gateway Target Group
+resource "aws_lb_target_group" "diagnyx_api_gateway" {
   name                 = "${local.ecs_name}-api-gateway"
-  port                 = 8080
+  port                 = 8443
   protocol             = "HTTP"
-  vpc_id               = aws_vpc.main.id
+  vpc_id               = module.vpc.vpc_id
   target_type          = "ip"
   deregistration_delay = 30
 
@@ -297,45 +216,12 @@ resource "aws_lb_target_group" "api_gateway" {
   )
 }
 
-# 6. Dashboard Service Target Group
-resource "aws_lb_target_group" "dashboard_service" {
-  name                 = "${local.ecs_name}-dashboard"
-  port                 = 3000
-  protocol             = "HTTP"
-  vpc_id               = aws_vpc.main.id
-  target_type          = "ip"
-  deregistration_delay = 30
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
-    interval            = 30
-    path                = "/api/health"
-    matcher             = "200"
-  }
-
-  stickiness {
-    type            = "lb_cookie"
-    cookie_duration = 86400
-    enabled         = true
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${local.ecs_name}-dashboard"
-    }
-  )
-}
-
-# 7. Marketing UI Target Group
+# 3. Marketing UI Target Group
 resource "aws_lb_target_group" "diagnyx_ui" {
   name                 = "${local.ecs_name}-ui"
   port                 = 3002
   protocol             = "HTTP"
-  vpc_id               = aws_vpc.main.id
+  vpc_id               = module.vpc.vpc_id
   target_type          = "ip"
   deregistration_delay = 30
 
@@ -359,14 +245,14 @@ resource "aws_lb_target_group" "diagnyx_ui" {
 
 # Path-based routing rules
 
-# API Gateway routing (default for API listener)
+# API Gateway routing (all API traffic)
 resource "aws_lb_listener_rule" "api_gateway" {
   listener_arn = aws_lb_listener.api.arn
   priority     = 100
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.api_gateway.arn
+    target_group_arn = aws_lb_target_group.diagnyx_api_gateway.arn
   }
 
   condition {
@@ -376,7 +262,7 @@ resource "aws_lb_listener_rule" "api_gateway" {
   }
 }
 
-# Direct service routing (bypassing API Gateway)
+# Direct user service routing (auth endpoints)
 resource "aws_lb_listener_rule" "user_service_direct" {
   listener_arn = aws_lb_listener.api.arn
   priority     = 110
@@ -389,71 +275,6 @@ resource "aws_lb_listener_rule" "user_service_direct" {
   condition {
     path_pattern {
       values = ["/api/v1/auth/*", "/api/v1/users/*"]
-    }
-  }
-}
-
-resource "aws_lb_listener_rule" "observability_service_direct" {
-  listener_arn = aws_lb_listener.api.arn
-  priority     = 120
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.observability_service.arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/api/v1/traces/*", "/api/v1/metrics/*"]
-    }
-  }
-}
-
-resource "aws_lb_listener_rule" "ai_quality_service_direct" {
-  listener_arn = aws_lb_listener.api.arn
-  priority     = 130
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.ai_quality_service.arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/api/v1/evaluate/*", "/api/v1/hallucination/*"]
-    }
-  }
-}
-
-resource "aws_lb_listener_rule" "optimization_service_direct" {
-  listener_arn = aws_lb_listener.api.arn
-  priority     = 140
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.optimization_service.arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/api/v1/route/*", "/api/v1/prompts/*"]
-    }
-  }
-}
-
-# Web app routing
-resource "aws_lb_listener_rule" "dashboard" {
-  listener_arn = aws_lb_listener.web.arn
-  priority     = 100
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.dashboard_service.arn
-  }
-
-  condition {
-    host_header {
-      values = ["app.${var.domain_name}"]
     }
   }
 }

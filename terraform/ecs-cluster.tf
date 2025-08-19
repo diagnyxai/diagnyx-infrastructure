@@ -74,7 +74,7 @@ resource "aws_cloudwatch_log_group" "ecs_services" {
 resource "aws_service_discovery_private_dns_namespace" "main" {
   name        = "${var.environment}.diagnyx.local"
   description = "Private DNS namespace for Diagnyx services"
-  vpc         = aws_vpc.main.id
+  vpc         = module.vpc.vpc_id
 
   tags = merge(
     local.common_tags,

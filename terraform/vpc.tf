@@ -23,17 +23,17 @@ module "vpc" {
   enable_flow_log                      = true
   create_flow_log_cloudwatch_iam_role = true
   create_flow_log_cloudwatch_log_group = true
-  flow_log_retention_in_days          = var.log_retention_days
+  flow_log_cloudwatch_log_group_retention_in_days = var.log_retention_days
   
-  # Tags for Kubernetes
+  # Tags for ECS infrastructure
   public_subnet_tags = {
-    "kubernetes.io/role/elb" = "1"
-    "kubernetes.io/cluster/${local.name_prefix}-eks" = "shared"
+    "Type" = "public"
+    "Tier" = "web"
   }
   
   private_subnet_tags = {
-    "kubernetes.io/role/internal-elb" = "1"
-    "kubernetes.io/cluster/${local.name_prefix}-eks" = "shared"
+    "Type" = "private"
+    "Tier" = "application"
   }
   
   tags = local.common_tags

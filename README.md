@@ -1,30 +1,38 @@
 # Diagnyx Infrastructure (diagnyx-infra)
 
-Complete infrastructure code for the Diagnyx LLM Observability Platform, optimized for cost-effective deployment with AWS ECS.
+Complete infrastructure code for the Diagnyx LLM Observability Platform, optimized for cost-effective deployment with simplified architecture.
 
-## 🏗️ Infrastructure Architecture
+## 🏗️ Simplified Infrastructure Architecture
 
 ### Bootstrap Foundation (~$12/month until deployment)
 - **Multi-account AWS Organization** with environment isolation
-- **Shared services** for ECR, ML assets, and configuration
+- **Shared services** for ECR repositories and configuration
 - **Cost management** with budgets and anomaly detection
 - **Security controls** via SCPs and cross-account roles
 
-### ECS-based Deployment (70% cheaper than EKS)
-- **Container orchestration** without Kubernetes complexity
-- **Mixed Spot/On-demand** instances for cost optimization
-- **Auto-scaling** based on metrics
-- **Scheduled scaling** for non-production environments
+### Simplified Service Architecture
+- **6 core services** (down from 15+ for 80% cost reduction)
+- **No Redis/ElastiCache** - in-memory caching only
+- **Single database** (PostgreSQL) for all data
+- **Streamlined monitoring** with Prometheus + Grafana
 
-## 💰 Cost Breakdown
+### Core Services
+1. **PostgreSQL Database** - Primary data store
+2. **User Service** (Java/Spring Boot) - Authentication & user management
+3. **API Gateway** (Node.js) - Unified API entry point
+4. **UI Service** (Next.js) - Marketing website & application
+5. **Prometheus** - Metrics collection
+6. **Grafana** - Monitoring dashboards
 
-| Environment | Bootstrap Only | Full Deployment |
-|-------------|---------------|-----------------|
-| Development | $12/month | $90/month |
-| Staging | Shared | $137/month |
-| UAT | Shared | $137/month |
-| Production | Shared | $437/month |
-| **Total** | **$12/month** | **~$800/month** |
+## 💰 Updated Cost Breakdown (80% Reduction)
+
+| Environment | Bootstrap Only | Simplified Deployment |
+|-------------|---------------|----------------------|
+| Development | $12/month | $25/month |
+| Staging | Shared | $35/month |
+| UAT | Shared | $35/month |
+| Production | Shared | $85/month |
+| **Total** | **$12/month** | **~$180/month** |
 
 ## 📁 Repository Structure
 

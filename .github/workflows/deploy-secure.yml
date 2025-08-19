@@ -1,0 +1,241 @@
+name: Secure Deployment Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+# Set environment based on branch
+env:
+  ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'prod' || github.ref == 'refs/heads/develop' && 'staging' || 'dev' }}
+
+jobs:
+  security-scan:
+    name: Security Scanning
+    uses: ./.github/workflows/security.yml
+    secrets: inherit
+
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: [security-scan]
+    # Use GitHub Environments for approval gates
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/develop' && 'staging' || 'development' }}
+    
+    strategy:
+      matrix:
+        service:
+          - user-service
+          - api-gateway
+          - observability-service
+          - optimization-service
+          - ai-quality-service
+          - diagnyx-ui
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_ACCESS_KEY_ID_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_ACCESS_KEY_ID_STAGING || secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_SECRET_ACCESS_KEY_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_SECRET_ACCESS_KEY_STAGING || secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: us-east-1
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build Docker image
+          docker build -t $ECR_REGISTRY/diagnyx/${{ matrix.service }}:$IMAGE_TAG \
+                       -t $ECR_REGISTRY/diagnyx/${{ matrix.service }}:${{ env.ENVIRONMENT }}-latest \
+                       repositories/${{ matrix.service }}
+          
+          # Push to ECR
+          docker push $ECR_REGISTRY/diagnyx/${{ matrix.service }}:$IMAGE_TAG
+          docker push $ECR_REGISTRY/diagnyx/${{ matrix.service }}:${{ env.ENVIRONMENT }}-latest
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/develop' && 'staging' || 'development' }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_ACCESS_KEY_ID_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_ACCESS_KEY_ID_STAGING || secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_SECRET_ACCESS_KEY_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_SECRET_ACCESS_KEY_STAGING || secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: us-east-1
+      
+      - name: Terraform Init
+        working-directory: repositories/diagnyx-infra/terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=diagnyx-terraform-state-${{ env.ENVIRONMENT }}" \
+            -backend-config="key=${{ env.ENVIRONMENT }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+      
+      - name: Terraform Plan
+        working-directory: repositories/diagnyx-infra/terraform
+        run: |
+          terraform plan \
+            -var="environment=${{ env.ENVIRONMENT }}" \
+            -var="image_tag=${{ github.sha }}" \
+            -out=tfplan
+      
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+        working-directory: repositories/diagnyx-infra/terraform
+        run: |
+          terraform apply -auto-approve tfplan
+
+  populate-secrets:
+    name: Populate AWS Secrets Manager
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure]
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/develop' && 'staging' || 'development' }}
+    # Only run on first deployment or when secrets need rotation
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_ACCESS_KEY_ID_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_ACCESS_KEY_ID_STAGING || secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_SECRET_ACCESS_KEY_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_SECRET_ACCESS_KEY_STAGING || secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: us-east-1
+      
+      - name: Populate secrets
+        env:
+          # Pass actual API keys from GitHub Secrets
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          chmod +x repositories/diagnyx-infra/scripts/populate-secrets.sh
+          CI=true repositories/diagnyx-infra/scripts/populate-secrets.sh ${{ env.ENVIRONMENT }}
+
+  deploy-services:
+    name: Deploy Services to ECS/EKS
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure]
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/develop' && 'staging' || 'development' }}
+    
+    strategy:
+      matrix:
+        service:
+          - user-service
+          - api-gateway
+          - observability-service
+          - optimization-service
+          - ai-quality-service
+          - diagnyx-ui
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_ACCESS_KEY_ID_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_SECRET_ACCESS_KEY_STAGING || secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ env.ENVIRONMENT == 'prod' && secrets.AWS_SECRET_ACCESS_KEY_PROD || env.ENVIRONMENT == 'staging' && secrets.AWS_SECRET_ACCESS_KEY_STAGING || secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: us-east-1
+      
+      - name: Deploy to ECS
+        run: |
+          # Update ECS service with new image
+          aws ecs update-service \
+            --cluster diagnyx-${{ env.ENVIRONMENT }} \
+            --service ${{ matrix.service }} \
+            --force-new-deployment \
+            --desired-count 2
+      
+      - name: Wait for deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster diagnyx-${{ env.ENVIRONMENT }} \
+            --services ${{ matrix.service }}
+
+  health-check:
+    name: Post-Deployment Health Check
+    runs-on: ubuntu-latest
+    needs: [deploy-services]
+    
+    steps:
+      - name: Check service health
+        run: |
+          # Get the load balancer URL based on environment
+          if [ "${{ env.ENVIRONMENT }}" == "prod" ]; then
+            BASE_URL="https://api.diagnyx.ai"
+          elif [ "${{ env.ENVIRONMENT }}" == "staging" ]; then
+            BASE_URL="https://staging-api.diagnyx.ai"
+          else
+            BASE_URL="https://dev-api.diagnyx.ai"
+          fi
+          
+          # Check each service health endpoint
+          services=("user-service:8001" "api-gateway:8443" "observability-service:8080" "ai-quality-service:8002" "optimization-service:8003")
+          
+          for service in "${services[@]}"; do
+            name="${service%%:*}"
+            port="${service##*:}"
+            
+            echo "Checking $name health..."
+            response=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health" || echo "000")
+            
+            if [ "$response" == "200" ]; then
+              echo "✅ $name is healthy"
+            else
+              echo "❌ $name health check failed (HTTP $response)"
+              exit 1
+            fi
+          done
+          
+          echo "✅ All services are healthy!"
+
+  notify:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: [health-check]
+    if: always()
+    
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            Deployment to ${{ env.ENVIRONMENT }} ${{ job.status }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()

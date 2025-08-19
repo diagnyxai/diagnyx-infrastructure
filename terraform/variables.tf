@@ -129,24 +129,8 @@ variable "rds_multi_az" {
   default     = false  # Disabled for non-production
 }
 
-# ElastiCache Configuration
-variable "elasticache_node_type" {
-  description = "ElastiCache node type"
-  type        = string
-  default     = "cache.t4g.small"  # Changed from cache.r6g.large for 75% savings
-}
-
-variable "elasticache_node_type_production" {
-  description = "ElastiCache node type for production"
-  type        = string
-  default     = "cache.t4g.medium"  # Graviton-based for production
-}
-
-variable "elasticache_num_cache_nodes" {
-  description = "Number of cache nodes"
-  type        = number
-  default     = 2  # Reduced from 3 for non-production
-}
+# Note: ElastiCache/Redis removed from simplified platform
+# All caching now handled in-memory by applications
 
 # S3 Configuration
 variable "enable_s3_versioning" {
@@ -222,4 +206,23 @@ variable "scale_up_schedule" {
   description = "Cron expression for scaling up (UTC)"
   type        = string
   default     = "0 12 * * MON-FRI"  # 12 PM UTC (7 AM EST) weekdays
+}
+
+# Multi-account variables
+variable "master_account_id" {
+  description = "AWS account ID for the master/billing account"
+  type        = string
+  default     = ""
+}
+
+variable "external_id" {
+  description = "External ID for cross-account role assumption"
+  type        = string
+  default     = "diagnyx-secure-external-id-2024"
+}
+
+variable "assume_role_arn" {
+  description = "ARN of the role to assume for cross-account access"
+  type        = string
+  default     = ""
 }

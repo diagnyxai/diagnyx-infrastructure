@@ -6,22 +6,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.23"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.11"
-    }
   }
   
   backend "s3" {
-    bucket         = "diagnyx-terraform-state"
+    bucket         = "diagnyx-terraform-state-778715730121"
     key            = "infrastructure/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "diagnyx-terraform-locks"
+    dynamodb_table = "diagnyx-terraform-locks-master"
   }
 }
 

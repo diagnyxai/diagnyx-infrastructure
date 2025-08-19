@@ -24,9 +24,7 @@ rds_max_allocated_storage    = 200
 rds_backup_retention_period  = 7  # 1 week of backups
 rds_multi_az                 = false  # Single AZ for staging
 
-# ElastiCache Configuration - Small cluster
-elasticache_node_type        = "cache.t4g.small"  # $26/month
-elasticache_num_cache_nodes  = 2  # Small cluster
+# ElastiCache removed - using in-memory caching
 
 # S3 Configuration
 enable_s3_versioning = true  # Enable versioning for testing

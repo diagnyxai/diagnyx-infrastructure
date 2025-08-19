@@ -1,131 +1,135 @@
 name: diagnyx-services
 
 services:
-  # Note: PostgreSQL and Redis are now provided by shared infrastructure containers:
-  # - database-postgres on localhost:5433
-  # - cache-redis on localhost:6380
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: diagnyx-postgres
+    environment:
+      POSTGRES_USER: diagnyx
+      POSTGRES_PASSWORD: diagnyx123
+      POSTGRES_DB: diagnyx
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+    networks:
+      - diagnyx-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diagnyx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
-  # Note: Kafka, Zookeeper, and Elasticsearch are now provided by shared infrastructure:
-  # - messaging-kafka on localhost:9093
-  # - messaging-zookeeper on localhost:2182 
-  # - search-elasticsearch on localhost:9201
-
-  # User Service
+  # User Service (Java/Spring Boot)
   user-service:
     build:
       context: ../../user-service
       dockerfile: Dockerfile
     container_name: diagnyx-user-service
     ports:
-      - "8001:8001"
-    environment:
-      SPRING_PROFILES_ACTIVE: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
-      JWT_SECRET: dev-jwt-secret
-    networks:
-      - diagnyx-workspace
-      - shared-infra-services
-
-  # AI Quality Service
-  ai-quality-service:
-    build:
-      context: ../../ai-quality-service
-      dockerfile: Dockerfile
-    container_name: diagnyx-ai-quality-service
-    ports:
-      - "8002:8002"
-    environment:
-      PORT: 8002
-      ENVIRONMENT: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
-    networks:
-      - diagnyx-workspace
-      - shared-infra-services
-
-  # Observability Service (Go)
-  observability-service:
-    build:
-      context: ../../observability-service
-      dockerfile: Dockerfile
-    container_name: diagnyx-observability-service
-    ports:
       - "8080:8080"
     environment:
-      PORT: 8080
-      ENVIRONMENT: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
-      KAFKA_BROKER_URL: messaging-kafka:29092
-      ELASTICSEARCH_URL: http://search-elasticsearch:9200
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: user_db
+      DB_USER: diagnyx
+      DB_PASSWORD: diagnyx123
+      JWT_SECRET: your-256-bit-secret-key-for-jwt-signing
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
-      - diagnyx-workspace
-      - shared-infra-services
-
-  # Optimization Service (Go)
-  optimization-service:
-    build:
-      context: ../../optimization-service
-      dockerfile: Dockerfile
-    container_name: diagnyx-optimization-service
-    ports:
-      - "8003:8003"
-    environment:
-      PORT: 8003
-      ENVIRONMENT: development
-      DATABASE_URL: postgres://shared_user:shared_pass123@database-postgres:5432/shared_db
-      REDIS_URL: redis://cache-redis:6379
-    networks:
-      - diagnyx-workspace
-      - shared-infra-services
+      - diagnyx-network
+    restart: unless-stopped
 
   # API Gateway (Node.js/Express)
-  api-gateway:
+  diagnyx-api-gateway:
     build:
       context: ../../diagnyx-api-gateway
       dockerfile: Dockerfile
     container_name: diagnyx-api-gateway
     ports:
-      - "8000:8080"
+      - "8443:8443"
     environment:
-      PORT: 8080
-      ENVIRONMENT: development
-      USER_SERVICE_URL: http://diagnyx-user-service:8001
-      OBSERVABILITY_SERVICE_URL: http://diagnyx-observability-service:8080
-      AI_QUALITY_SERVICE_URL: http://diagnyx-ai-quality-service:8002
-      OPTIMIZATION_SERVICE_URL: http://diagnyx-optimization-service:8003
-      REDIS_URL: redis://cache-redis:6379
+      PORT: 8443
+      NODE_ENV: production
+      USER_SERVICE_URL: http://user-service:8080
+      JWT_SECRET: your-256-bit-secret-key-for-jwt-signing
+      HTTPS_ENABLED: "true"
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 100
+    depends_on:
+      - user-service
     networks:
-      - diagnyx-workspace
-      - shared-infra-services
+      - diagnyx-network
+    restart: unless-stopped
 
-  # Diagnyx UI (Unified Website and Dashboard)
+  # UI Service (Next.js/React)
   diagnyx-ui:
     build:
       context: ../../diagnyx-ui
       dockerfile: Dockerfile
     container_name: diagnyx-ui
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
-      NEXT_PUBLIC_AUTH_URL: http://localhost:3001
-      NEXT_PUBLIC_ENVIRONMENT: development
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: https://localhost:8443
+      NEXT_PUBLIC_SITE_URL: http://localhost:3002
+    depends_on:
+      - diagnyx-api-gateway
     networks:
-      - diagnyx-workspace
-      - shared-infra-services
+      - diagnyx-network
+    restart: unless-stopped
 
-  # Note: Monitoring infrastructure is now provided by shared containers:
-  # - monitoring-prometheus on localhost:9091
-  # - monitoring-grafana on localhost:3006
-  # - observability-otel on localhost:4319 (gRPC), 4320 (HTTP), 8889 (metrics)
+  # Prometheus (Monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: diagnyx-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - diagnyx-network
+    restart: unless-stopped
 
-volumes: {}
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: diagnyx-grafana
+    ports:
+      - "3005:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - diagnyx-network
+    restart: unless-stopped
 
 networks:
-  diagnyx-workspace:
-    name: diagnyx-services
+  diagnyx-network:
     driver: bridge
-  shared-infra-services:
-    external: true
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+# Note: This is the simplified Diagnyx architecture with 6 services
+# Removed services: observability-service, ai-quality-service, optimization-service, 
+# dashboard-service, Redis, Kafka, Zookeeper, ClickHouse

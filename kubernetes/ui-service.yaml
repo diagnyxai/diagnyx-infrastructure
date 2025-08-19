@@ -1,43 +1,45 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dashboard
+  name: ui-service
   namespace: diagnyx
   labels:
-    app: dashboard
+    app: ui-service
     version: v1
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: dashboard
+      app: ui-service
   template:
     metadata:
       labels:
-        app: dashboard
+        app: ui-service
         version: v1
     spec:
       containers:
-      - name: dashboard
-        image: diagnyx/dashboard:latest
+      - name: ui-service
+        image: diagnyx/diagnyx-ui:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
           name: http
         env:
+        - name: PORT
+          value: "3000"
+        - name: NODE_ENV
+          value: "production"
         - name: NEXT_PUBLIC_API_URL
           value: "https://api.diagnyx.ai"
-        - name: NEXT_PUBLIC_AUTH_URL
-          value: "https://auth.diagnyx.ai"
-        - name: NEXT_PUBLIC_ENVIRONMENT
-          value: "production"
+        - name: NEXT_PUBLIC_SITE_URL
+          value: "https://diagnyx.ai"
         resources:
           requests:
             memory: "256Mi"
             cpu: "100m"
           limits:
             memory: "512Mi"
-            cpu: "250m"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /
@@ -54,10 +56,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dashboard
+  name: ui-service
   namespace: diagnyx
   labels:
-    app: dashboard
+    app: ui-service
 spec:
   type: ClusterIP
   ports:
@@ -66,4 +68,4 @@ spec:
     protocol: TCP
     name: http
   selector:
-    app: dashboard
+    app: ui-service
