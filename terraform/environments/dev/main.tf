@@ -6,11 +6,19 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.1"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.2"
+    }
   }
   
   backend "s3" {
     bucket         = "diagnyx-terraform-state-778715730121"
-    key            = "infrastructure/terraform.tfstate"
+    key            = "environments/dev/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
     dynamodb_table = "diagnyx-terraform-locks-master"
@@ -50,9 +58,19 @@ locals {
   azs = slice(data.aws_availability_zones.available.names, 0, 3)
 }
 
-# Authentication Module
+# VPC Module (shared across environments but environment-specific)
+module "vpc" {
+  source = "../../modules/vpc"
+  
+  environment  = var.environment
+  vpc_cidr     = var.vpc_cidr
+  azs          = local.azs
+  common_tags  = local.common_tags
+}
+
+# Authentication Module (environment-specific)
 module "authentication" {
-  source = "./modules/authentication"
+  source = "../../modules/authentication"
 
   # Environment Configuration
   environment    = var.environment
@@ -85,7 +103,36 @@ module "authentication" {
   common_tags = local.common_tags
 
   depends_on = [
-    # Ensure VPC and networking are created first
-    # These dependencies will be added when VPC module exists
+    module.vpc
+  ]
+}
+
+# ECS Cluster Module (environment-specific)
+module "ecs_cluster" {
+  source = "../../modules/ecs-cluster"
+  
+  environment     = var.environment
+  vpc_id          = module.vpc.vpc_id
+  private_subnets = module.vpc.private_subnets
+  public_subnets  = module.vpc.public_subnets
+  common_tags     = local.common_tags
+  
+  depends_on = [module.vpc]
+}
+
+# Application Services Module (environment-specific)
+module "app_services" {
+  source = "../../modules/app-services"
+  
+  environment       = var.environment
+  ecs_cluster_id    = module.ecs_cluster.cluster_id
+  vpc_id            = module.vpc.vpc_id
+  private_subnets   = module.vpc.private_subnets
+  database_endpoint = module.authentication.database_endpoint
+  common_tags       = local.common_tags
+  
+  depends_on = [
+    module.ecs_cluster,
+    module.authentication
   ]
 }

@@ -1,0 +1,19 @@
+Verify Your Diagnyx Account
+
+Almost there!
+
+Please verify your email address to complete your Diagnyx account setup.
+
+Verification link: {{verificationLink}}
+
+Note: This verification link will expire in 24 hours.
+
+Didn't sign up for Diagnyx?
+If you didn't create an account, you can safely ignore this email.
+
+Best regards,
+The Diagnyx Team
+
+---
+© 2024 Diagnyx. All rights reserved.
+This verification email was sent to {{email}}

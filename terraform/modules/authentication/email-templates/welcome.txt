@@ -1,0 +1,24 @@
+Welcome to Diagnyx!
+
+Hello {{firstName}},
+
+Thank you for signing up for Diagnyx. We're excited to help you monitor, optimize, and improve your LLM applications.
+
+What's Next?
+- Complete your profile - Add your organization details
+- Integrate your first application - Start monitoring LLM calls
+- Set up quality thresholds - Define what success looks like
+- Explore cost optimization - Reduce LLM costs by up to 85%
+
+Get started: ${app_url}/dashboard
+
+Need Help?
+Check out our documentation: ${app_url}/docs
+Or reach out to our support team: support@diagnyx.ai
+
+Best regards,
+The Diagnyx Team
+
+---
+© 2024 Diagnyx. All rights reserved.
+You received this email because you signed up for a Diagnyx account.
