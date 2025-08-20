@@ -56,12 +56,8 @@ Total:            ~$50/month
 
 ### ECS Services (All running 1 instance)
 1. **user-service** - Authentication and user management
-2. **observability-service** - Metrics and tracing
-3. **ai-quality-service** - AI evaluation
-4. **optimization-service** - Cost optimization
-5. **api-gateway** - API routing
-6. **dashboard-service** - Web dashboard
-7. **diagnyx-ui** - Marketing website
+2. **api-gateway** - API routing
+3. **diagnyx-ui** - Marketing website
 
 ### Auto-scaling Settings
 ```hcl
@@ -139,7 +135,7 @@ aws ecs update-service \
 ### Emergency Stop All Services
 ```bash
 # Stop all services in an environment
-for service in user-service observability-service ai-quality-service optimization-service api-gateway dashboard-service diagnyx-ui; do
+for service in user-service api-gateway diagnyx-ui; do
   aws ecs update-service \
     --cluster diagnyx-development \
     --service $service \

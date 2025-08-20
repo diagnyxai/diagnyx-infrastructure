@@ -25,8 +25,9 @@ resource "aws_ecs_task_definition" "user_service" {
   family                   = "${local.ecs_name}-user-service"
   network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
-  cpu                      = var.environment == "production" ? "512" : "256"
-  memory                   = var.environment == "production" ? "1024" : "512"
+  # Environment-specific resource allocation for MVP
+  cpu    = var.environment == "production" ? "512" : (var.environment == "uat" ? "256" : "256")
+  memory = var.environment == "production" ? "1024" : (var.environment == "uat" ? "512" : "512")
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
@@ -66,11 +67,11 @@ resource "aws_ecs_task_definition" "user_service" {
       secrets = [
         {
           name      = "DATABASE_PASSWORD"
-          valueFrom = aws_secretsmanager_secret.db_password.arn
+          valueFrom = aws_db_instance.main.master_user_secret[0].secret_arn
         },
         {
           name      = "JWT_SECRET"
-          valueFrom = aws_secretsmanager_secret.jwt_secret.arn
+          valueFrom = "${aws_secretsmanager_secret.jwt_secret.arn}:secret::"
         }
       ]
       
@@ -101,8 +102,9 @@ resource "aws_ecs_task_definition" "diagnyx_api_gateway" {
   family                   = "${local.ecs_name}-api-gateway"
   network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
-  cpu                      = var.environment == "production" ? "512" : "256"
-  memory                   = var.environment == "production" ? "512" : "256"
+  # Environment-specific resource allocation for MVP
+  cpu    = var.environment == "production" ? "512" : (var.environment == "uat" ? "256" : "256")
+  memory = var.environment == "production" ? "1024" : (var.environment == "uat" ? "512" : "512")
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
@@ -142,7 +144,7 @@ resource "aws_ecs_task_definition" "diagnyx_api_gateway" {
       secrets = [
         {
           name      = "JWT_SECRET"
-          valueFrom = aws_secretsmanager_secret.jwt_secret.arn
+          valueFrom = "${aws_secretsmanager_secret.jwt_secret.arn}:secret::"
         }
       ]
       
@@ -173,8 +175,9 @@ resource "aws_ecs_task_definition" "diagnyx_ui" {
   family                   = "${local.ecs_name}-ui"
   network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
-  cpu                      = var.environment == "production" ? "512" : "256"
-  memory                   = var.environment == "production" ? "512" : "256"
+  # Environment-specific resource allocation for MVP
+  cpu    = var.environment == "production" ? "256" : (var.environment == "uat" ? "256" : "256")
+  memory = var.environment == "production" ? "512" : (var.environment == "uat" ? "512" : "512")
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 

@@ -18,14 +18,6 @@ locals {
       description = "PostgreSQL database password"
       rotation    = true
     }
-    "redis-password" = {
-      description = "Redis cache password"
-      rotation    = false
-    }
-    "clickhouse-password" = {
-      description = "ClickHouse analytics database password"
-      rotation    = false
-    }
   }
   
   # External API keys
@@ -52,18 +44,6 @@ locals {
   service_keys = {
     "user-service-api-key" = {
       description = "API key for user service"
-      rotation    = true
-    }
-    "observability-service-api-key" = {
-      description = "API key for observability service"
-      rotation    = true
-    }
-    "ai-quality-service-api-key" = {
-      description = "API key for AI quality service"
-      rotation    = true
-    }
-    "optimization-service-api-key" = {
-      description = "API key for optimization service"
       rotation    = true
     }
   }

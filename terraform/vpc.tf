@@ -11,8 +11,9 @@ module "vpc" {
   public_subnets  = [for k, v in local.azs : cidrsubnet(var.vpc_cidr, 8, k + 48)]
   database_subnets = [for k, v in local.azs : cidrsubnet(var.vpc_cidr, 8, k + 56)]
   
-  enable_nat_gateway   = var.enable_nat_gateway
-  single_nat_gateway   = var.environment != "production" ? true : var.single_nat_gateway  # Single NAT for non-prod
+  # Disable NAT Gateway for non-production to use custom NAT instance for cost savings
+  enable_nat_gateway   = var.environment == "production" ? var.enable_nat_gateway : false
+  single_nat_gateway   = var.environment == "production" ? var.single_nat_gateway : true
   enable_dns_hostnames = true
   enable_dns_support   = true
   
@@ -37,6 +38,118 @@ module "vpc" {
   }
   
   tags = local.common_tags
+}
+
+# Custom NAT Instance for non-production environments (cost optimization)
+# NAT Instance is ~$15/month vs NAT Gateway ~$45/month = 67% savings
+
+# Latest Amazon Linux 2 AMI optimized for NAT
+data "aws_ami" "nat_instance" {
+  count       = var.environment != "production" ? 1 : 0
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-kernel-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# Security Group for NAT Instance
+resource "aws_security_group" "nat_instance" {
+  count       = var.environment != "production" ? 1 : 0
+  name_prefix = "${local.name_prefix}-nat-instance-"
+  description = "Security group for NAT instance"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description = "HTTP from private subnets"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = [for subnet in module.vpc.private_subnets_cidr_blocks : subnet]
+  }
+
+  ingress {
+    description = "HTTPS from private subnets"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [for subnet in module.vpc.private_subnets_cidr_blocks : subnet]
+  }
+
+  ingress {
+    description = "SSH from VPC (for debugging)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [module.vpc.vpc_cidr_block]
+  }
+
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-nat-instance-sg"
+  })
+}
+
+# NAT Instance
+resource "aws_instance" "nat_instance" {
+  count                  = var.environment != "production" ? 1 : 0
+  ami                    = data.aws_ami.nat_instance[0].id
+  instance_type          = "t4g.nano"  # Smallest ARM instance for cost optimization
+  key_name               = var.key_name != "" ? var.key_name : null
+  vpc_security_group_ids = [aws_security_group.nat_instance[0].id]
+  subnet_id              = module.vpc.public_subnets[0]
+  source_dest_check      = false
+
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    yum update -y
+    echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf
+    sysctl -p
+    /sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    /sbin/iptables -F FORWARD
+    service iptables save
+    chkconfig iptables on
+  EOF
+  )
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-nat-instance"
+    Type = "NAT"
+    CostOptimization = "nat-gateway-replacement"
+  })
+}
+
+# Elastic IP for NAT Instance
+resource "aws_eip" "nat_instance" {
+  count    = var.environment != "production" ? 1 : 0
+  instance = aws_instance.nat_instance[0].id
+  domain   = "vpc"
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-nat-instance-eip"
+  })
+}
+
+# Route table for private subnets (when using NAT instance)
+resource "aws_route" "private_nat_instance" {
+  count                  = var.environment != "production" ? length(module.vpc.private_route_table_ids) : 0
+  route_table_id         = module.vpc.private_route_table_ids[count.index]
+  destination_cidr_block = "0.0.0.0/0"
+  instance_id            = aws_instance.nat_instance[0].id
 }
 
 # VPC Endpoints for AWS Services

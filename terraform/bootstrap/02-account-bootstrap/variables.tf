@@ -31,11 +31,7 @@ variable "ecr_repositories" {
   type        = list(string)
   default = [
     "user-service",
-    "observability-service",
-    "ai-quality-service",
-    "optimization-service",
     "api-gateway",
-    "dashboard-service",
     "diagnyx-ui"
   ]
 }

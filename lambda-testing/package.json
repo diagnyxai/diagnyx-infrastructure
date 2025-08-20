@@ -1,0 +1,49 @@
+{
+  "name": "@diagnyx/lambda-testing",
+  "version": "1.0.0",
+  "description": "Local testing framework for Diagnyx Lambda functions",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:post-confirmation": "node src/test-post-confirmation.js",
+    "test:pre-token": "node src/test-pre-token.js",
+    "test:integration": "node src/test-integration.js",
+    "lint": "eslint src/",
+    "start-local-server": "node src/mock-api-server.js",
+    "test:e2e": "npm run start-local-server & sleep 2 && npm run test:integration && pkill -f mock-api-server"
+  },
+  "keywords": [
+    "lambda",
+    "cognito",
+    "testing",
+    "aws"
+  ],
+  "author": "Diagnyx Team",
+  "license": "ISC",
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.50.0",
+    "supertest": "^6.3.3",
+    "@types/jest": "^29.5.5"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "uuid": "^9.0.1",
+    "dotenv": "^16.3.1"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/mock-*.js",
+      "!src/test-*.js"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.js",
+      "**/?(*.)+(spec|test).js"
+    ]
+  }
+}

@@ -1,0 +1,180 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches: [ develop, main ]
+    paths:
+      - 'terraform/**'
+      - 'kubernetes/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      confirm_apply:
+        description: 'Type "APPLY" to confirm terraform apply'
+        required: true
+        type: string
+
+env:
+  TF_VERSION: '1.5'
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  determine-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      aws-role: ${{ steps.set-env.outputs.aws-role }}
+    steps:
+    - name: Determine environment
+      id: set-env
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          if [ "${{ github.event.inputs.environment }}" == "production" ]; then
+            echo "aws-role=DiagnyxGitHubActions-Production" >> $GITHUB_OUTPUT
+          else
+            echo "aws-role=DiagnyxGitHubActions-Development" >> $GITHUB_OUTPUT
+          fi
+        elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+          echo "environment=production" >> $GITHUB_OUTPUT
+          echo "aws-role=DiagnyxGitHubActions-Production" >> $GITHUB_OUTPUT
+        else
+          echo "environment=staging" >> $GITHUB_OUTPUT
+          echo "aws-role=DiagnyxGitHubActions-Development" >> $GITHUB_OUTPUT
+        fi
+
+  validate-manual-deployment:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+    - name: Validate deployment confirmation
+      run: |
+        if [ "${{ github.event.inputs.confirm_apply }}" != "APPLY" ]; then
+          echo "::error::Deployment confirmation failed. Please type 'APPLY' to confirm."
+          exit 1
+        fi
+        echo "Manual deployment confirmed for environment: ${{ github.event.inputs.environment }}"
+
+  terraform-apply:
+    runs-on: ubuntu-latest
+    needs: [determine-environment]
+    # Disabled by default - uncomment when ready to enable automatic deployments
+    if: false  # Change to 'true' when ready to enable
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ needs.determine-environment.outputs.aws-role }}
+        role-session-name: GitHubActions-TerraformApply-${{ needs.determine-environment.outputs.environment }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Terraform Init
+      run: |
+        cd terraform/environments/${{ needs.determine-environment.outputs.environment }}
+        terraform init -backend-config=../../backend-configs/${{ needs.determine-environment.outputs.environment }}.hcl
+    
+    - name: Terraform Plan
+      run: |
+        cd terraform/environments/${{ needs.determine-environment.outputs.environment }}
+        terraform plan -var-file=terraform.tfvars -out=tfplan
+        terraform show tfplan
+    
+    - name: Terraform Apply
+      run: |
+        cd terraform/environments/${{ needs.determine-environment.outputs.environment }}
+        terraform apply tfplan
+    
+    - name: Terraform Output
+      run: |
+        cd terraform/environments/${{ needs.determine-environment.outputs.environment }}
+        terraform output -json > terraform-outputs.json
+    
+    - name: Upload Terraform Outputs
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-outputs-${{ needs.determine-environment.outputs.environment }}
+        path: terraform/environments/${{ needs.determine-environment.outputs.environment }}/terraform-outputs.json
+        retention-days: 30
+    
+    - name: Notify deployment completion
+      run: |
+        echo "::notice title=Infrastructure Deployment::Terraform apply completed successfully for ${{ needs.determine-environment.outputs.environment }} environment"
+
+  kubernetes-apply:
+    runs-on: ubuntu-latest
+    needs: [determine-environment, terraform-apply]
+    # Disabled by default - uncomment when ready to enable automatic deployments
+    if: false  # Change to 'true' when ready to enable
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ needs.determine-environment.outputs.aws-role }}
+        role-session-name: GitHubActions-KubernetesApply-${{ needs.determine-environment.outputs.environment }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Download Terraform Outputs
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-outputs-${{ needs.determine-environment.outputs.environment }}
+        path: ./terraform-outputs/
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Configure kubectl for EKS
+      run: |
+        # Extract cluster name from Terraform outputs
+        CLUSTER_NAME=$(jq -r '.cluster_name.value' ./terraform-outputs/terraform-outputs.json)
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name $CLUSTER_NAME
+        kubectl config current-context
+    
+    - name: Apply Kubernetes manifests
+      run: |
+        # Replace environment-specific values in manifests
+        sed -i 's/{{ENVIRONMENT}}/${{ needs.determine-environment.outputs.environment }}/g' kubernetes/*.yaml
+        
+        # Apply namespace first
+        kubectl apply -f kubernetes/namespace.yaml
+        
+        # Apply other manifests
+        kubectl apply -f kubernetes/ -n diagnyx-${{ needs.determine-environment.outputs.environment }}
+    
+    - name: Wait for deployments to be ready
+      run: |
+        kubectl wait --for=condition=available --timeout=600s deployment --all -n diagnyx-${{ needs.determine-environment.outputs.environment }}
+    
+    - name: Get service status
+      run: |
+        kubectl get pods,services,ingress -n diagnyx-${{ needs.determine-environment.outputs.environment }}
+    
+    - name: Notify Kubernetes deployment completion
+      run: |
+        echo "::notice title=Kubernetes Deployment::Kubernetes manifests applied successfully for ${{ needs.determine-environment.outputs.environment }} environment"

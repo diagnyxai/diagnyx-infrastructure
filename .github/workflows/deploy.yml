@@ -19,29 +19,9 @@ jobs:
             path: repositories/user-service
             test_command: "mvn test"
             coverage_command: "mvn test jacoco:report"
-          - name: observability-service
-            type: go
-            path: repositories/observability-service
-            test_command: "go test ./..."
-            coverage_command: "go test -coverprofile=coverage.out ./..."
-          - name: ai-quality-service
-            type: python
-            path: repositories/ai-quality-service
-            test_command: "pytest"
-            coverage_command: "pytest --cov=app --cov-report=xml tests/"
-          - name: optimization-service
-            type: go
-            path: repositories/optimization-service
-            test_command: "go test ./..."
-            coverage_command: "go test -coverprofile=coverage.out ./..."
           - name: api-gateway
             type: node
             path: repositories/api-gateway
-            test_command: "npm test"
-            coverage_command: "npm run test:coverage"
-          - name: dashboard-service
-            type: node
-            path: repositories/dashboard-service
             test_command: "npm test"
             coverage_command: "npm run test:coverage"
           - name: diagnyx-ui
@@ -149,26 +129,10 @@ jobs:
             type: java
             path: repositories/user-service
             lint_command: "mvn checkstyle:check"
-          - name: observability-service
-            type: go
-            path: repositories/observability-service
-            lint_command: "golangci-lint run || true"
-          - name: ai-quality-service
-            type: python
-            path: repositories/ai-quality-service
-            lint_command: "flake8 app/ tests/ && mypy app/"
-          - name: optimization-service
-            type: go
-            path: repositories/optimization-service
-            lint_command: "golangci-lint run || true"
           - name: api-gateway
             type: node
             path: repositories/api-gateway
             lint_command: "npm run lint && npm run type-check"
-          - name: dashboard-service
-            type: node
-            path: repositories/dashboard-service
-            lint_command: "npm run lint && npx tsc --noEmit"
           - name: diagnyx-ui
             type: node
             path: repositories/diagnyx-ui

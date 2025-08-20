@@ -10,11 +10,11 @@ variable "aws_region" {
 }
 
 variable "environment" {
-  description = "Environment name (dev, staging, production)"
+  description = "Environment name (dev, uat, staging, production)"
   type        = string
   validation {
-    condition     = contains(["dev", "staging", "production"], var.environment)
-    error_message = "Environment must be dev, staging, or production."
+    condition     = contains(["dev", "uat", "staging", "production"], var.environment)
+    error_message = "Environment must be dev, uat, staging, or production."
   }
 }
 
@@ -22,6 +22,24 @@ variable "owner_email" {
   description = "Email of the infrastructure owner"
   type        = string
   default     = "infrastructure@diagnyx.ai"
+}
+
+# SSL Certificate Configuration
+variable "domain_name" {
+  description = "Primary domain name for SSL certificates"
+  type        = string
+  default     = ""
+  
+  validation {
+    condition = var.domain_name == "" || can(regex("^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\\.[a-zA-Z]{2,}$", var.domain_name))
+    error_message = "Domain name must be a valid domain format (e.g., diagnyx.ai) or empty string for local development."
+  }
+}
+
+variable "notification_topic_arn" {
+  description = "SNS topic ARN for certificate expiry notifications"
+  type        = string
+  default     = ""
 }
 
 # VPC Configuration
@@ -41,6 +59,12 @@ variable "single_nat_gateway" {
   description = "Use a single NAT Gateway for all private subnets"
   type        = bool
   default     = false
+}
+
+variable "key_name" {
+  description = "AWS Key Pair name for EC2 instances (optional)"
+  type        = string
+  default     = ""
 }
 
 # EKS Configuration
@@ -131,6 +155,19 @@ variable "rds_multi_az" {
 
 # Note: ElastiCache/Redis removed from simplified platform
 # All caching now handled in-memory by applications
+
+# Database Configuration
+variable "database_name" {
+  description = "Name of the database"
+  type        = string
+  default     = "diagnyx"
+}
+
+variable "database_master_username" {
+  description = "Master username for the database"
+  type        = string
+  default     = "diagnyx"
+}
 
 # S3 Configuration
 variable "enable_s3_versioning" {

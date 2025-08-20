@@ -1,5 +1,8 @@
 # Diagnyx Infrastructure (diagnyx-infra)
 
+[![Terraform Plan](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-plan.yml/badge.svg)](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-plan.yml)
+[![Terraform Apply](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-apply.yml/badge.svg)](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-apply.yml)
+
 Complete infrastructure code for the Diagnyx LLM Observability Platform, optimized for cost-effective deployment with simplified architecture.
 
 ## 🏗️ Simplified Infrastructure Architecture
@@ -57,6 +60,19 @@ diagnyx-infra/
 ├── docker/                           # Docker Compose for local dev
 │   ├── docker-compose.yml
 │   └── .env.example
+├── monitoring/                       # Monitoring configurations
+│   ├── grafana/                     # Grafana dashboards & datasources
+│   └── prometheus.yml               # Prometheus configuration
+├── e2e/                             # End-to-end tests
+│   ├── tests/                       # Playwright test suites
+│   ├── docker-compose.e2e.yml      # E2E test environment
+│   └── README.md                    # E2E testing guide
+├── lambda-testing/                   # Lambda function testing
+│   ├── src/                         # Test framework & utilities
+│   └── README.md                    # Lambda testing guide
+├── shared-config/                    # Shared AWS configurations
+│   ├── aws-config.js               # AWS configuration
+│   └── aws-config.ts               # TypeScript AWS config
 ├── scripts/                          # Deployment automation
 │   ├── bootstrap.sh                  # One-time setup
 │   ├── deploy-ecs.sh                # ECS deployment

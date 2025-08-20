@@ -1,0 +1,248 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches: [ develop, main ]
+    paths:
+      - 'terraform/**'
+      - 'kubernetes/**'
+      - '.github/workflows/terraform-**'
+  push:
+    branches: [ 'feature/*', 'feat/*', 'bugfix/*', 'hotfix/*' ]
+    paths:
+      - 'terraform/**'
+      - 'kubernetes/**'
+      - '.github/workflows/terraform-**'
+
+env:
+  TF_VERSION: '1.5'
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  terraform-validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Terraform Format Check
+      run: terraform fmt -check -recursive terraform/
+    
+    - name: Terraform Validate (Dev)
+      run: |
+        cd terraform/environments/dev
+        terraform init -backend=false
+        terraform validate
+    
+    - name: Terraform Validate (Staging)
+      run: |
+        cd terraform/environments/staging
+        terraform init -backend=false
+        terraform validate
+    
+    - name: Terraform Validate (Production)
+      run: |
+        cd terraform/environments/production
+        terraform init -backend=false
+        terraform validate
+    
+    - name: TFLint
+      uses: terraform-linters/setup-tflint@v4
+      with:
+        tflint_version: v0.44.1
+    
+    - name: Run TFLint
+      run: |
+        cd terraform
+        tflint --init
+        tflint --recursive
+    
+    - name: Checkov Static Analysis
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: terraform/
+        framework: terraform
+        output_format: sarif
+        output_file_path: checkov-results.sarif
+    
+    - name: Upload Checkov scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: checkov-results.sarif
+
+  terraform-plan-dev:
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+    if: github.event_name == 'pull_request' && contains(github.head_ref, 'feature/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/DiagnyxGitHubActions-Development
+        role-session-name: GitHubActions-TerraformPlan-Dev
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Terraform Init (Dev)
+      run: |
+        cd terraform/environments/dev
+        terraform init -backend-config=../../backend-configs/dev.hcl
+    
+    - name: Terraform Plan (Dev)
+      id: plan-dev
+      run: |
+        cd terraform/environments/dev
+        terraform plan -var-file=terraform.tfvars -out=tfplan -no-color
+        terraform show -no-color tfplan > plan-output.txt
+      continue-on-error: true
+    
+    - name: Comment PR with Plan (Dev)
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const plan = fs.readFileSync('terraform/environments/dev/plan-output.txt', 'utf8');
+          const output = `## Terraform Plan (Development)
+          
+          \`\`\`hcl
+          ${plan}
+          \`\`\`
+          
+          Plan: ${{ steps.plan-dev.outcome }}`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+  terraform-plan-staging:
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+    if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/DiagnyxGitHubActions-Development
+        role-session-name: GitHubActions-TerraformPlan-Staging
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Terraform Init (Staging)
+      run: |
+        cd terraform/environments/staging
+        terraform init -backend-config=../../backend-configs/staging.hcl
+    
+    - name: Terraform Plan (Staging)
+      id: plan-staging
+      run: |
+        cd terraform/environments/staging
+        terraform plan -var-file=terraform.tfvars -out=tfplan -no-color
+        terraform show -no-color tfplan > plan-output.txt
+      continue-on-error: true
+    
+    - name: Comment PR with Plan (Staging)
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const plan = fs.readFileSync('terraform/environments/staging/plan-output.txt', 'utf8');
+          const output = `## Terraform Plan (Staging)
+          
+          \`\`\`hcl
+          ${plan}
+          \`\`\`
+          
+          Plan: ${{ steps.plan-staging.outcome }}`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });
+
+  terraform-plan-production:
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/DiagnyxGitHubActions-Staging
+        role-session-name: GitHubActions-TerraformPlan-Production
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Terraform Init (Production)
+      run: |
+        cd terraform/environments/production
+        terraform init -backend-config=../../backend-configs/production.hcl
+    
+    - name: Terraform Plan (Production)
+      id: plan-production
+      run: |
+        cd terraform/environments/production
+        terraform plan -var-file=terraform.tfvars -out=tfplan -no-color
+        terraform show -no-color tfplan > plan-output.txt
+      continue-on-error: true
+    
+    - name: Comment PR with Plan (Production)
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const plan = fs.readFileSync('terraform/environments/production/plan-output.txt', 'utf8');
+          const output = `## Terraform Plan (Production)
+          
+          \`\`\`hcl
+          ${plan}
+          \`\`\`
+          
+          Plan: ${{ steps.plan-production.outcome }}`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          });

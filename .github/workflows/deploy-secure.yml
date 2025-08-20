@@ -38,9 +38,6 @@ jobs:
         service:
           - user-service
           - api-gateway
-          - observability-service
-          - optimization-service
-          - ai-quality-service
           - diagnyx-ui
     
     steps:
@@ -154,9 +151,6 @@ jobs:
         service:
           - user-service
           - api-gateway
-          - observability-service
-          - optimization-service
-          - ai-quality-service
           - diagnyx-ui
     
     steps:
@@ -202,7 +196,7 @@ jobs:
           fi
           
           # Check each service health endpoint
-          services=("user-service:8001" "api-gateway:8443" "observability-service:8080" "ai-quality-service:8002" "optimization-service:8003")
+          services=("user-service:8080" "api-gateway:8443" "diagnyx-ui:3000")
           
           for service in "${services[@]}"; do
             name="${service%%:*}"

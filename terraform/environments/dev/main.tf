@@ -17,11 +17,11 @@ terraform {
   }
   
   backend "s3" {
-    bucket         = "diagnyx-terraform-state-778715730121"
+    bucket         = "diagnyx-tf-state-778715730121"
     key            = "environments/dev/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "diagnyx-terraform-locks-master"
+    dynamodb_table = "diagnyx-terraform-locks-778715730121"
   }
 }
 

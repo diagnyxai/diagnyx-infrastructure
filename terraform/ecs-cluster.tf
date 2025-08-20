@@ -55,19 +55,79 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   }
 }
 
-# CloudWatch Log Groups
+# CloudWatch Log Groups with optimized retention
 resource "aws_cloudwatch_log_group" "ecs_exec" {
-  name              = "/ecs/${local.ecs_name}/exec"
-  retention_in_days = var.environment == "production" ? 30 : 7
+  name = "/ecs/${local.ecs_name}/exec"
+  # Environment-specific log retention for MVP
+  retention_in_days = var.environment == "production" ? 7 : (
+    var.environment == "uat" ? 3 : 1
+  )
 
   tags = local.common_tags
 }
 
 resource "aws_cloudwatch_log_group" "ecs_services" {
-  name              = "/ecs/${local.ecs_name}/services"
-  retention_in_days = var.environment == "production" ? 30 : 7
+  name = "/ecs/${local.ecs_name}/services"
+  # Environment-specific log retention for MVP
+  retention_in_days = var.environment == "production" ? 7 : (
+    var.environment == "uat" ? 3 : 1
+  )
 
   tags = local.common_tags
+}
+
+# S3 bucket for long-term log archival with lifecycle policies
+resource "aws_s3_bucket" "log_archive" {
+  bucket = "diagnyx-${var.environment}-log-archive-${random_id.bucket_suffix.hex}"
+
+  tags = merge(local.common_tags, {
+    Name    = "diagnyx-${var.environment}-log-archive"
+    Purpose = "Long-term log storage with lifecycle management"
+  })
+}
+
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
+}
+
+resource "aws_s3_bucket_versioning" "log_archive" {
+  bucket = aws_s3_bucket.log_archive.id
+  versioning_configuration {
+    status = "Disabled"  # No versioning needed for logs
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "log_archive" {
+  bucket = aws_s3_bucket.log_archive.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "log_archive" {
+  bucket = aws_s3_bucket.log_archive.id
+
+  rule {
+    id     = "log_lifecycle"
+    status = "Enabled"
+
+    transition {
+      days          = 7
+      storage_class = "STANDARD_IA"
+    }
+
+    transition {
+      days          = 30
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 90  # 3 months maximum retention for all environments
+    }
+  }
 }
 
 # Service Discovery Namespace

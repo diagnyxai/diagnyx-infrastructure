@@ -174,10 +174,7 @@ def scale_down_services():
 def stop_non_essential_services():
     """Stop non-essential ECS services"""
     non_essential = [
-        'dashboard-service',
-        'diagnyx-ui',
-        'ai-quality-service',
-        'optimization-service'
+        'diagnyx-ui'
     ]
     
     try:
@@ -202,10 +199,7 @@ def scale_down_non_critical_services():
     
     # Production-specific scaling
     scaling_map = {
-        'observability-service': 2,
-        'ai-quality-service': 1,
-        'optimization-service': 1,
-        'dashboard-service': 1
+        'diagnyx-ui': 1
     }
     
     try:
@@ -225,7 +219,7 @@ def scale_down_non_critical_services():
 
 def emergency_scale_down():
     """Emergency scale down - keep only critical services"""
-    critical_services = ['api-gateway', 'user-service', 'observability-service']
+    critical_services = ['api-gateway', 'user-service']
     
     try:
         services = ecs.list_services(cluster=CLUSTER_NAME)['serviceArns']

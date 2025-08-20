@@ -4,20 +4,20 @@ locals {
   # Service scaling configurations - Simplified platform
   service_scaling = {
     user_service = {
-      min_capacity = 1
-      max_capacity = var.environment == "production" ? 3 : 2
+      min_capacity = (var.environment == "production" || var.environment == "uat") ? 1 : 0
+      max_capacity = var.environment == "production" ? 3 : (var.environment == "uat" ? 2 : 1)
       target_cpu   = 70
       target_memory = 80
     }
     diagnyx_api_gateway = {
-      min_capacity = 1
-      max_capacity = var.environment == "production" ? 3 : 2
+      min_capacity = (var.environment == "production" || var.environment == "uat") ? 1 : 0
+      max_capacity = var.environment == "production" ? 3 : (var.environment == "uat" ? 2 : 1)
       target_cpu   = 60
       target_memory = 70
     }
     diagnyx_ui = {
-      min_capacity = 1
-      max_capacity = var.environment == "production" ? 2 : 1
+      min_capacity = (var.environment == "production" || var.environment == "uat") ? 1 : 0
+      max_capacity = var.environment == "production" ? 2 : (var.environment == "uat" ? 1 : 1)
       target_cpu   = 70
       target_memory = 80
     }

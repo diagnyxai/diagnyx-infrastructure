@@ -1,0 +1,211 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # Database Service for E2E Tests
+  # ===========================================
+  postgres-e2e:
+    image: postgres:15-alpine
+    container_name: diagnyx-postgres-e2e
+    environment:
+      POSTGRES_USER: diagnyx_test
+      POSTGRES_PASSWORD: test123
+      POSTGRES_DB: diagnyx_test
+    volumes:
+      - ../scripts/init-databases-fixed.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ../repositories/user-service/src/main/resources/db/migration:/docker-entrypoint-initdb.d/migrations
+    ports:
+      - "5433:5432"
+    networks:
+      - diagnyx-e2e-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diagnyx_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ===========================================
+  # Backend Services for E2E Tests
+  # ===========================================
+  user-service-e2e:
+    build:
+      context: ../repositories/user-service
+      dockerfile: Dockerfile
+    container_name: diagnyx-user-service-e2e
+    environment:
+      SPRING_PROFILES_ACTIVE: test
+      DB_HOST: postgres-e2e
+      DB_PORT: 5432
+      DB_NAME: diagnyx_users
+      DB_USER: diagnyx_test
+      DB_PASSWORD: test123
+      
+      # AWS Cognito Configuration for E2E Tests
+      AWS_COGNITO_REGION: us-east-1
+      AWS_COGNITO_USER_POOL_ID: ${AWS_COGNITO_USER_POOL_ID}
+      AWS_COGNITO_CLIENT_ID: ${AWS_COGNITO_CLIENT_ID}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      
+      # JWT Configuration
+      JWT_SECRET: e2e-test-secret-key-256-bits-long-for-testing-purposes-only
+      JWT_EXPIRATION: 3600000
+      
+      # Logging
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_DIAGNYX: DEBUG
+      
+      SERVER_PORT: 8080
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres-e2e:
+        condition: service_healthy
+    networks:
+      - diagnyx-e2e-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api-gateway-e2e:
+    build:
+      context: ../repositories/diagnyx-api-gateway
+      dockerfile: Dockerfile
+    container_name: diagnyx-api-gateway-e2e
+    environment:
+      PORT: 8443
+      NODE_ENV: test
+      
+      # Service URLs
+      USER_SERVICE_URL: http://user-service-e2e:8080
+      
+      # AWS Cognito Configuration
+      AWS_COGNITO_REGION: us-east-1
+      AWS_COGNITO_USER_POOL_ID: ${AWS_COGNITO_USER_POOL_ID}
+      AWS_COGNITO_CLIENT_ID: ${AWS_COGNITO_CLIENT_ID}
+      
+      # JWT Configuration
+      JWT_SECRET: e2e-test-secret-key-256-bits-long-for-testing-purposes-only
+      
+      # Rate Limiting (Relaxed for E2E tests)
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 1000
+      
+      # CORS Configuration
+      CORS_ORIGIN: http://ui-e2e:3000,http://localhost:3003
+      
+      # SSL Configuration (Disabled for E2E)
+      HTTPS_ENABLED: false
+    ports:
+      - "8444:8443"
+    depends_on:
+      user-service-e2e:
+        condition: service_healthy
+    networks:
+      - diagnyx-e2e-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8443/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ===========================================
+  # Frontend Service for E2E Tests
+  # ===========================================
+  ui-e2e:
+    build:
+      context: ../repositories/diagnyx-ui
+      dockerfile: Dockerfile.e2e
+      args:
+        NODE_ENV: test
+    container_name: diagnyx-ui-e2e
+    environment:
+      NODE_ENV: test
+      PORT: 3000
+      
+      # API Configuration
+      NEXT_PUBLIC_API_URL: http://api-gateway-e2e:8443
+      NEXT_PUBLIC_SITE_URL: http://localhost:3003
+      
+      # AWS Amplify Configuration for E2E
+      NEXT_PUBLIC_AWS_REGION: us-east-1
+      NEXT_PUBLIC_AWS_COGNITO_USER_POOL_ID: ${AWS_COGNITO_USER_POOL_ID}
+      NEXT_PUBLIC_AWS_COGNITO_CLIENT_ID: ${AWS_COGNITO_CLIENT_ID}
+      
+      # E2E Test Configuration
+      NEXT_PUBLIC_E2E_MODE: true
+      NEXT_PUBLIC_TEST_USER_EMAIL: e2e-test@diagnyx.com
+      NEXT_PUBLIC_TEST_USER_PASSWORD: E2eTestPassword123!
+    ports:
+      - "3003:3000"
+    depends_on:
+      api-gateway-e2e:
+        condition: service_healthy
+    networks:
+      - diagnyx-e2e-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ===========================================
+  # E2E Test Runner Service
+  # ===========================================
+  e2e-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e-runner
+    container_name: diagnyx-e2e-runner
+    environment:
+      # Test Configuration
+      BASE_URL: http://ui-e2e:3000
+      API_URL: http://api-gateway-e2e:8443
+      
+      # AWS Configuration for API Tests
+      AWS_COGNITO_REGION: us-east-1
+      AWS_COGNITO_USER_POOL_ID: ${AWS_COGNITO_USER_POOL_ID}
+      AWS_COGNITO_CLIENT_ID: ${AWS_COGNITO_CLIENT_ID}
+      
+      # Test User Credentials
+      TEST_USER_EMAIL: e2e-test@diagnyx.com
+      TEST_USER_PASSWORD: E2eTestPassword123!
+      TEST_USER_NAME: E2E Test User
+      
+      # Browser Configuration
+      HEADLESS: true
+      BROWSER: chromium
+      
+      # Test Timeouts
+      DEFAULT_TIMEOUT: 30000
+      NAVIGATION_TIMEOUT: 60000
+    volumes:
+      - ./test-results:/app/test-results
+      - ./screenshots:/app/screenshots
+      - ./videos:/app/videos
+    depends_on:
+      ui-e2e:
+        condition: service_healthy
+      api-gateway-e2e:
+        condition: service_healthy
+      user-service-e2e:
+        condition: service_healthy
+    networks:
+      - diagnyx-e2e-network
+    profiles:
+      - e2e
+    command: ["npm", "run", "test:e2e"]
+
+networks:
+  diagnyx-e2e-network:
+    driver: bridge
+    name: diagnyx-e2e-network
+
+volumes:
+  postgres-e2e-data:
+    name: diagnyx-postgres-e2e-data

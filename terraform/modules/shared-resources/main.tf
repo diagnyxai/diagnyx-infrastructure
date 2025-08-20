@@ -51,7 +51,7 @@ resource "aws_ecr_repository" "diagnyx_ui" {
   })
 }
 
-# ECR Lifecycle Policies
+# ECR Lifecycle Policies - Optimized for cost
 resource "aws_ecr_lifecycle_policy" "user_service" {
   repository = aws_ecr_repository.user_service.name
 
@@ -59,12 +59,11 @@ resource "aws_ecr_lifecycle_policy" "user_service" {
     rules = [
       {
         rulePriority = 1
-        description  = "Keep last 10 images"
+        description  = "Keep last 5 tagged images only"
         selection = {
           tagStatus     = "tagged"
-          tagPrefixList = ["v"]
           countType     = "imageCountMoreThan"
-          countNumber   = 10
+          countNumber   = 5
         }
         action = {
           type = "expire"
@@ -78,6 +77,20 @@ resource "aws_ecr_lifecycle_policy" "user_service" {
           countType   = "sinceImagePushed"
           countUnit   = "days"
           countNumber = 1
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 3
+        description  = "Keep only production images longer than 30 days"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["production"]
+          countType     = "sinceImagePushed"
+          countUnit     = "days"
+          countNumber   = 30
         }
         action = {
           type = "expire"
@@ -94,12 +107,11 @@ resource "aws_ecr_lifecycle_policy" "api_gateway" {
     rules = [
       {
         rulePriority = 1
-        description  = "Keep last 10 images"
+        description  = "Keep last 5 tagged images only"
         selection = {
           tagStatus     = "tagged"
-          tagPrefixList = ["v"]
           countType     = "imageCountMoreThan"
-          countNumber   = 10
+          countNumber   = 5
         }
         action = {
           type = "expire"
@@ -113,6 +125,20 @@ resource "aws_ecr_lifecycle_policy" "api_gateway" {
           countType   = "sinceImagePushed"
           countUnit   = "days"
           countNumber = 1
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 3
+        description  = "Keep only production images longer than 30 days"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["production"]
+          countType     = "sinceImagePushed"
+          countUnit     = "days"
+          countNumber   = 30
         }
         action = {
           type = "expire"
@@ -129,12 +155,11 @@ resource "aws_ecr_lifecycle_policy" "diagnyx_ui" {
     rules = [
       {
         rulePriority = 1
-        description  = "Keep last 10 images"
+        description  = "Keep last 5 tagged images only"
         selection = {
           tagStatus     = "tagged"
-          tagPrefixList = ["v"]
           countType     = "imageCountMoreThan"
-          countNumber   = 10
+          countNumber   = 5
         }
         action = {
           type = "expire"
@@ -148,6 +173,20 @@ resource "aws_ecr_lifecycle_policy" "diagnyx_ui" {
           countType   = "sinceImagePushed"
           countUnit   = "days"
           countNumber = 1
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 3
+        description  = "Keep only production images longer than 30 days"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["production"]
+          countType     = "sinceImagePushed"
+          countUnit     = "days"
+          countNumber   = 30
         }
         action = {
           type = "expire"

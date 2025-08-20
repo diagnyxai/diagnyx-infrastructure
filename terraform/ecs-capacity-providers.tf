@@ -5,7 +5,10 @@
 resource "aws_launch_template" "ecs" {
   name_prefix   = "${local.ecs_name}-"
   image_id      = data.aws_ami.ecs_optimized.id
-  instance_type = var.ecs_instance_type
+  # Environment-specific instance types
+  instance_type = var.environment == "production" ? "t4g.small" : (
+    var.environment == "uat" ? "t4g.micro" : "t4g.nano"
+  )
 
   # Use ARM-based Graviton instances for 20% cost savings
   instance_requirements {
@@ -38,7 +41,7 @@ resource "aws_launch_template" "ecs" {
   block_device_mappings {
     device_name = "/dev/xvda"
     ebs {
-      volume_size           = var.environment == "production" ? 50 : 30
+      volume_size           = 20  # Minimum 20GB for all environments
       volume_type           = "gp3"
       encrypted             = true
       delete_on_termination = true
@@ -75,9 +78,10 @@ resource "aws_launch_template" "ecs" {
 resource "aws_autoscaling_group" "ecs_on_demand" {
   name                = "${local.ecs_name}-on-demand"
   vpc_zone_identifier = aws_subnet.private[*].id
-  min_size            = 1  # Always keep at least 1 instance
-  max_size            = var.environment == "production" ? 2 : 1  # Max 2 for prod, 1 for others
-  desired_capacity    = 1  # Start with 1 instance in all environments
+  # Environment-specific capacity settings
+  min_size = (var.environment == "production" || var.environment == "uat") ? 1 : 0
+  max_size = var.environment == "production" ? 3 : (var.environment == "uat" ? 2 : 1)
+  desired_capacity = (var.environment == "production" || var.environment == "uat") ? 1 : 0
 
   launch_template {
     id      = aws_launch_template.ecs.id
@@ -106,7 +110,7 @@ resource "aws_autoscaling_group" "ecs_spot" {
   name                = "${local.ecs_name}-spot"
   vpc_zone_identifier = aws_subnet.private[*].id
   min_size            = 0  # Spot can scale to 0
-  max_size            = var.environment == "production" ? 2 : 1  # Max 2 for prod, 1 for others
+  max_size = var.environment == "production" ? 2 : (var.environment == "uat" ? 1 : 1)
   desired_capacity    = 0  # Start with 0 spot instances to minimize cost
 
   mixed_instances_policy {
@@ -291,28 +295,75 @@ data "aws_ami" "ecs_optimized" {
 variable "ecs_instance_type" {
   description = "Instance type for ECS container instances"
   type        = string
-  default     = "t4g.small"  # Start with smallest ARM instance for cost savings
+  default     = "t4g.nano"  # Absolute minimum for all environments
 }
 
-# Scheduled scaling for non-production environments
-resource "aws_autoscaling_schedule" "scale_down" {
+# Enhanced scheduled scaling for non-production environments
+# On-Demand instances - Weekday scaling
+resource "aws_autoscaling_schedule" "scale_down_weekday" {
   count = var.environment != "production" ? 1 : 0
 
-  scheduled_action_name  = "${local.ecs_name}-scale-down"
+  scheduled_action_name  = "${local.ecs_name}-scale-down-weekday"
   autoscaling_group_name = aws_autoscaling_group.ecs_on_demand.name
   min_size               = 0
   max_size               = 0
   desired_capacity       = 0
-  recurrence             = "0 19 * * MON-FRI"  # 7 PM UTC daily on weekdays
+  recurrence             = "0 19 * * MON-FRI"  # 7 PM UTC weekdays
 }
 
-resource "aws_autoscaling_schedule" "scale_up" {
+resource "aws_autoscaling_schedule" "scale_up_weekday" {
   count = var.environment != "production" ? 1 : 0
 
-  scheduled_action_name  = "${local.ecs_name}-scale-up"
+  scheduled_action_name  = "${local.ecs_name}-scale-up-weekday"
   autoscaling_group_name = aws_autoscaling_group.ecs_on_demand.name
   min_size               = 0
   max_size               = 2
   desired_capacity       = 1
-  recurrence             = "0 11 * * MON-FRI"  # 11 AM UTC daily on weekdays
+  recurrence             = "0 11 * * MON-FRI"  # 11 AM UTC weekdays
+}
+
+# On-Demand instances - Weekend scaling (complete shutdown)
+resource "aws_autoscaling_schedule" "scale_down_weekend" {
+  count = var.environment != "production" ? 1 : 0
+
+  scheduled_action_name  = "${local.ecs_name}-scale-down-weekend"
+  autoscaling_group_name = aws_autoscaling_group.ecs_on_demand.name
+  min_size               = 0
+  max_size               = 0
+  desired_capacity       = 0
+  recurrence             = "0 18 * * FRI"  # 6 PM Friday
+}
+
+resource "aws_autoscaling_schedule" "scale_up_monday" {
+  count = var.environment != "production" ? 1 : 0
+
+  scheduled_action_name  = "${local.ecs_name}-scale-up-monday"
+  autoscaling_group_name = aws_autoscaling_group.ecs_on_demand.name
+  min_size               = 0
+  max_size               = 2
+  desired_capacity       = 1
+  recurrence             = "0 11 * * MON"  # 11 AM Monday
+}
+
+# Spot instances - Similar scheduling for additional cost savings
+resource "aws_autoscaling_schedule" "spot_scale_down_weekday" {
+  count = var.environment != "production" ? 1 : 0
+
+  scheduled_action_name  = "${local.ecs_name}-spot-scale-down-weekday"
+  autoscaling_group_name = aws_autoscaling_group.ecs_spot.name
+  min_size               = 0
+  max_size               = 0
+  desired_capacity       = 0
+  recurrence             = "0 19 * * MON-FRI"  # 7 PM UTC weekdays
+}
+
+resource "aws_autoscaling_schedule" "spot_scale_down_weekend" {
+  count = var.environment != "production" ? 1 : 0
+
+  scheduled_action_name  = "${local.ecs_name}-spot-scale-down-weekend"
+  autoscaling_group_name = aws_autoscaling_group.ecs_spot.name
+  min_size               = 0
+  max_size               = 0
+  desired_capacity       = 0
+  recurrence             = "0 18 * * FRI"  # 6 PM Friday
 }

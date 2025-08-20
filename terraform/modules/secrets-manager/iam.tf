@@ -70,9 +70,6 @@ resource "aws_iam_policy" "ec2_secrets_policy" {
 locals {
   services = [
     "user-service",
-    "observability-service",
-    "ai-quality-service",
-    "optimization-service",
     "api-gateway"
   ]
 }

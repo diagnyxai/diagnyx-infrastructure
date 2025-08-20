@@ -24,7 +24,7 @@ jobs:
         CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
         
         # Define all services
-        ALL_SERVICES='["user-service","observability-service","ai-quality-service","optimization-service","api-gateway","dashboard-service","diagnyx-ui","diagnyx-python-sdk","diagnyx-javascript-sdk"]'
+        ALL_SERVICES='["user-service","api-gateway","diagnyx-ui"]'
         
         # Detect which services were changed
         CHANGED_SERVICES='[]'
@@ -32,20 +32,8 @@ jobs:
         if echo "$CHANGED_FILES" | grep -q "repositories/user-service/"; then
           CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["user-service"]')
         fi
-        if echo "$CHANGED_FILES" | grep -q "repositories/observability-service/"; then
-          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["observability-service"]')
-        fi
-        if echo "$CHANGED_FILES" | grep -q "repositories/ai-quality-service/"; then
-          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["ai-quality-service"]')
-        fi
-        if echo "$CHANGED_FILES" | grep -q "repositories/optimization-service/"; then
-          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["optimization-service"]')
-        fi
         if echo "$CHANGED_FILES" | grep -q "repositories/api-gateway/"; then
           CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["api-gateway"]')
-        fi
-        if echo "$CHANGED_FILES" | grep -q "repositories/dashboard-service/"; then
-          CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["dashboard-service"]')
         fi
         if echo "$CHANGED_FILES" | grep -q "repositories/diagnyx-ui/"; then
           CHANGED_SERVICES=$(echo "$CHANGED_SERVICES" | jq '. += ["diagnyx-ui"]')
@@ -116,44 +104,14 @@ jobs:
             echo "path=repositories/user-service" >> $GITHUB_OUTPUT
             echo "test_command=mvn test" >> $GITHUB_OUTPUT
             ;;
-          "observability-service")
-            echo "type=go" >> $GITHUB_OUTPUT
-            echo "path=repositories/observability-service" >> $GITHUB_OUTPUT
-            echo "test_command=go test ./..." >> $GITHUB_OUTPUT
-            ;;
-          "ai-quality-service")
-            echo "type=python" >> $GITHUB_OUTPUT
-            echo "path=repositories/ai-quality-service" >> $GITHUB_OUTPUT
-            echo "test_command=pytest" >> $GITHUB_OUTPUT
-            ;;
-          "optimization-service")
-            echo "type=go" >> $GITHUB_OUTPUT
-            echo "path=repositories/optimization-service" >> $GITHUB_OUTPUT
-            echo "test_command=go test ./..." >> $GITHUB_OUTPUT
-            ;;
           "api-gateway")
             echo "type=node" >> $GITHUB_OUTPUT
             echo "path=repositories/api-gateway" >> $GITHUB_OUTPUT
             echo "test_command=npm test" >> $GITHUB_OUTPUT
             ;;
-          "dashboard-service")
-            echo "type=node" >> $GITHUB_OUTPUT
-            echo "path=repositories/dashboard-service" >> $GITHUB_OUTPUT
-            echo "test_command=npm test" >> $GITHUB_OUTPUT
-            ;;
           "diagnyx-ui")
             echo "type=node" >> $GITHUB_OUTPUT
             echo "path=repositories/diagnyx-ui" >> $GITHUB_OUTPUT
-            echo "test_command=npm test" >> $GITHUB_OUTPUT
-            ;;
-          "diagnyx-python-sdk")
-            echo "type=python" >> $GITHUB_OUTPUT
-            echo "path=repositories/diagnyx-python-sdk" >> $GITHUB_OUTPUT
-            echo "test_command=python -m pytest" >> $GITHUB_OUTPUT
-            ;;
-          "diagnyx-javascript-sdk")
-            echo "type=node" >> $GITHUB_OUTPUT
-            echo "path=repositories/diagnyx-javascript-sdk" >> $GITHUB_OUTPUT
             echo "test_command=npm test" >> $GITHUB_OUTPUT
             ;;
         esac
@@ -282,7 +240,7 @@ jobs:
         import os
         
         # Verify all service configurations exist
-        services = ['user-service', 'observability-service', 'ai-quality-service', 'optimization-service', 'api-gateway', 'dashboard-service', 'diagnyx-ui']
+        services = ['user-service', 'api-gateway', 'diagnyx-ui']
         
         for service in services:
             service_path = f'repositories/{service}'

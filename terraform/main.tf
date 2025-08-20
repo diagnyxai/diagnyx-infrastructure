@@ -50,6 +50,35 @@ locals {
   azs = slice(data.aws_availability_zones.available.names, 0, 3)
 }
 
+# Certificate Management Module
+module "certificates" {
+  source = "./modules/certificates"
+
+  # Environment Configuration
+  environment = var.environment
+  domain_name = var.domain_name
+  
+  # Subject alternative names for wildcard and subdomains
+  subject_alternative_names = [
+    "*.${var.domain_name}",
+    "api.${var.domain_name}",
+    "www.${var.domain_name}",
+    "app.${var.domain_name}"
+  ]
+
+  # Certificate monitoring configuration
+  enable_monitoring         = var.environment == "production" ? true : false
+  notification_topic_arn    = var.notification_topic_arn
+  log_retention_days        = var.environment == "production" ? 90 : 30
+  early_renewal_days        = var.environment == "production" ? 30 : 14
+
+  # Common tags
+  tags = merge(local.common_tags, {
+    Name    = "${var.environment}-ssl-certificates"
+    Purpose = "SSL/TLS certificates for Diagnyx platform"
+  })
+}
+
 # Authentication Module
 module "authentication" {
   source = "./modules/authentication"

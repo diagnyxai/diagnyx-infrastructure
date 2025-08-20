@@ -6,10 +6,8 @@ locals {
   # Core application secrets needed across services
   application_secrets = [
     "database-password",
-    "redis-password", 
     "jwt-secret",
-    "jwt-refresh-secret",
-    "kafka-credentials"
+    "jwt-refresh-secret"
   ]
   
   # API keys for external services
@@ -24,9 +22,6 @@ locals {
   # Service-specific secrets
   service_secrets = [
     "user-service-key",
-    "observability-service-key",
-    "ai-quality-service-key",
-    "optimization-service-key",
     "admin-api-key"
   ]
 }

@@ -31,24 +31,6 @@ locals {
       Runtime       = "java"
       Framework     = "spring-boot"
     }
-    observability_service = {
-      Component     = "observability-service"
-      ServiceType   = "ingestion"
-      Runtime       = "go"
-      Framework     = "gin"
-    }
-    ai_quality_service = {
-      Component     = "ai-quality-service"
-      ServiceType   = "ml-evaluation"
-      Runtime       = "python"
-      Framework     = "fastapi"
-    }
-    optimization_service = {
-      Component     = "optimization-service"
-      ServiceType   = "cost-optimization"
-      Runtime       = "go"
-      Framework     = "gin"
-    }
     api_gateway = {
       Component     = "api-gateway"
       ServiceType   = "gateway"
