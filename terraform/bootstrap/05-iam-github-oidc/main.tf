@@ -71,8 +71,8 @@ resource "aws_iam_role" "github_actions_dev" {
           }
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:diagnyxai/*:ref:refs/heads/develop",
-              "repo:diagnyxai/*:ref:refs/heads/feature/*"
+              "repo:diagnyx/*:ref:refs/heads/develop",
+              "repo:diagnyx/*:ref:refs/heads/feature/*"
             ]
           }
         }
@@ -108,8 +108,8 @@ resource "aws_iam_role" "github_actions_staging" {
           }
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:diagnyxai/*:ref:refs/heads/staging",
-              "repo:diagnyxai/*:ref:refs/heads/release/*"
+              "repo:diagnyx/*:ref:refs/heads/staging",
+              "repo:diagnyx/*:ref:refs/heads/release/*"
             ]
           }
         }
@@ -145,8 +145,8 @@ resource "aws_iam_role" "github_actions_prod" {
           }
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:diagnyxai/*:ref:refs/heads/main",
-              "repo:diagnyxai/*:ref:refs/tags/v*"
+              "repo:diagnyx/*:ref:refs/heads/main",
+              "repo:diagnyx/*:ref:refs/tags/v*"
             ]
           }
         }
