@@ -61,4 +61,4 @@ secrets.json
 *.crt
 
 # Claude Code instructions
-CLAUDE.md
+# CLAUDE.md - Now tracked in repository for team collaboration

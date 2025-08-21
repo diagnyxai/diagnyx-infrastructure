@@ -1,7 +1,7 @@
 # Diagnyx Infrastructure (diagnyx-infra)
 
-[![Terraform Plan](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-plan.yml/badge.svg)](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-plan.yml)
-[![Terraform Apply](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-apply.yml/badge.svg)](https://github.com/diagnyxai/diagnyx-infra/actions/workflows/terraform-apply.yml)
+[![Terraform Plan](https://github.com/diagnyx/diagnyx-infra/actions/workflows/terraform-plan.yml/badge.svg)](https://github.com/diagnyx/diagnyx-infra/actions/workflows/terraform-plan.yml)
+[![Terraform Apply](https://github.com/diagnyx/diagnyx-infra/actions/workflows/terraform-apply.yml/badge.svg)](https://github.com/diagnyx/diagnyx-infra/actions/workflows/terraform-apply.yml)
 
 Complete infrastructure code for the Diagnyx LLM Observability Platform, optimized for cost-effective deployment with simplified architecture.
 
