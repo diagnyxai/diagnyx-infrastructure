@@ -1,20 +1,20 @@
 # Development Environment Outputs
 
-# VPC Outputs
-output "vpc_id" {
-  description = "ID of the VPC"
-  value       = module.vpc.vpc_id
-}
+# VPC Outputs (disabled for local development)
+# output "vpc_id" {
+#   description = "ID of the VPC"
+#   value       = null
+# }
 
-output "private_subnets" {
-  description = "IDs of the private subnets"
-  value       = module.vpc.private_subnets
-}
+# output "private_subnets" {
+#   description = "IDs of the private subnets"
+#   value       = []
+# }
 
-output "public_subnets" {
-  description = "IDs of the public subnets"
-  value       = module.vpc.public_subnets
-}
+# output "public_subnets" {
+#   description = "IDs of the public subnets"
+#   value       = []
+# }
 
 # Authentication Outputs
 output "cognito_user_pool_id" {
@@ -60,15 +60,21 @@ output "api_keys_secret_arn" {
   value       = module.authentication.api_keys_secret_arn
 }
 
-# ECS Cluster
-output "ecs_cluster_id" {
-  description = "ID of the ECS cluster"
-  value       = module.ecs_cluster.cluster_id
-}
+# ECS Cluster (disabled for local development)
+# output "ecs_cluster_id" {
+#   description = "ID of the ECS cluster"
+#   value       = null
+# }
 
-output "ecs_cluster_name" {
-  description = "Name of the ECS cluster"
-  value       = module.ecs_cluster.cluster_name
+# output "ecs_cluster_name" {
+#   description = "Name of the ECS cluster"
+#   value       = null
+# }
+
+# Shared Resources Outputs
+output "ecr_repositories" {
+  description = "ECR repository URLs"
+  value       = module.shared_resources.ecr_repositories
 }
 
 # Environment Info

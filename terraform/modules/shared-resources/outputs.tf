@@ -23,13 +23,13 @@ output "ecr_repositories" {
   }
 }
 
-# Route 53 Outputs
-output "hosted_zone_id" {
-  description = "Route 53 hosted zone ID"
-  value       = var.create_hosted_zone ? aws_route53_zone.main[0].zone_id : null
-}
+# Route 53 Outputs (disabled - using Cloudflare)
+# output "hosted_zone_id" {
+#   description = "Route 53 hosted zone ID"
+#   value       = null
+# }
 
-output "hosted_zone_name_servers" {
-  description = "Route 53 hosted zone name servers"
-  value       = var.create_hosted_zone ? aws_route53_zone.main[0].name_servers : null
-}
+# output "hosted_zone_name_servers" {
+#   description = "Route 53 hosted zone name servers"
+#   value       = null
+# }

@@ -1,0 +1,12 @@
+{
+  "name": "post-confirmation-trigger",
+  "version": "1.0.0",
+  "description": "Cognito post-confirmation Lambda trigger",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["cognito", "lambda", "post-confirmation"],
+  "author": "Diagnyx",
+  "license": "MIT"
+}

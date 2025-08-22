@@ -157,14 +157,5 @@ resource "aws_ecr_lifecycle_policy" "diagnyx_ui" {
   })
 }
 
-# Route 53 Hosted Zone (shared across environments)
-resource "aws_route53_zone" "main" {
-  count = var.create_hosted_zone ? 1 : 0
-  name  = var.domain_name
-
-  tags = merge(var.common_tags, {
-    Name = "diagnyx-hosted-zone"
-    Type = "Route53"
-    Shared = "true"
-  })
-}
+# Route 53 Hosted Zone (skipped - using Cloudflare for DNS)
+# Domain management is handled externally via Cloudflare
